@@ -791,7 +791,7 @@ function openEditor(opts){
   const T=today();
   if(opts.item){
     const it=opts.item;
-    F={mode:'item',isNew:false,ID:it.ID,Type:it.Type,Owner:it.Owner,Title:it.Title,Notes:it.Notes||'',Priority:+it.Priority||2,Tag:it.Tag||'',
+    F={mode:'item',isNew:false,ID:it.ID,Type:it.Type,origType:it.Type,Owner:it.Owner,Title:it.Title,Notes:it.Notes||'',Priority:+it.Priority||2,Tag:it.Tag||'',
       Date:it.Date,Time:it.Time||'',Kind:it.Kind||'',EndTime:it.EndTime||'',Location:it.Location||'',AssignedTo:it.AssignedTo||'Anyone',Checklist:parseCL(it.Checklist).map(x=>({t:x.t,d:!!x.d})),
       Freq:'none',Days:[],RecurID:it.RecurID,CreatedBy:it.CreatedBy,CreatedAt:it.CreatedAt,Completed:it.Completed==='Yes',CompletedBy:it.CompletedBy,CompletedDate:it.CompletedDate,
       readOnly:!canEdit(it)};
@@ -864,7 +864,10 @@ function renderModal(){
        <label class="lbl" for="f_loc">Location (optional)</label><input class="field" id="f_loc" value="${esc(F.Location)}" placeholder="Address, office, Zoom…" autocomplete="off">`:
       `<div class="row2"><div><label class="lbl" for="f_date">${F.mode==='rule'?'Starts on':'Date'}</label><input class="field" type="date" id="f_date" value="${F.Date}"></div>
        <div><label class="lbl" for="f_time">Time (optional)</label><input class="field" type="time" id="f_time" value="${F.Time}"></div></div>`;
-    body=`${kindSeg}<label class="lbl" for="f_title">${isA?'What’s the meeting?':'What needs to be done?'}</label><input class="field" id="f_title" value="${esc(F.Title)}" placeholder="${isA?'e.g. Walkthrough with adjuster at Smith job':'e.g. Call the adjuster on the Smith job'}" autocomplete="off">
+    const canMove=F.mode==='item'||F.isNew;
+    const whereSeg=canMove?`<div class="lbl">Where it goes</div><div class="seg"><button type="button" class="${!team?'on':''}" data-act="f-where" data-v="personal">👤 ${F.Owner&&F.Owner!==S.user.name&&!team?esc(first(F.Owner))+'’s planner':'My planner'}</button><button type="button" class="${team?'on':''}" data-act="f-where" data-v="team">👥 Team calendar</button></div>
+      ${!F.isNew&&team!==(F.origType==='team')?`<div class="info">${team?'When you save, this moves to the <b>Team calendar</b> and everyone will see it.':'When you save, this moves off the Team calendar into <b>your own planner</b> — only you (and Clint) will see it.'}</div>`:''}`:'';
+    body=`${kindSeg}${whereSeg}<label class="lbl" for="f_title">${isA?'What’s the meeting?':'What needs to be done?'}</label><input class="field" id="f_title" value="${esc(F.Title)}" placeholder="${isA?'e.g. Walkthrough with adjuster at Smith job':'e.g. Call the adjuster on the Smith job'}" autocomplete="off">
       <label class="lbl" for="f_notes">Notes</label><textarea class="field" id="f_notes" placeholder="Details, phone numbers, addresses…">${esc(F.Notes)}</textarea>
       <div class="lbl">Importance</div><div class="seg">${pri}</div>
       <div class="lbl">Category</div><div class="seg">${tags}</div>
@@ -910,7 +913,8 @@ function saveForm(){
   }
   const existing=F.ID?findItem(F.ID):null;
   const it=Object.assign(existing||{ID:uid('i'),Type:F.Type,Owner:F.Owner,CreatedBy:S.user.name,CreatedAt:new Date().toISOString(),Completed:'',CompletedDate:'',CompletedBy:'',RecurID:'',Deleted:''},
-    {Title:F.Title.trim(),Notes:F.Notes,Priority:String(F.Priority),Tag:F.Tag,Date:F.Date,Time:F.Time,AssignedTo:F.Type==='team'?F.AssignedTo:'',Checklist:clStr},kindFields);
+    {Title:F.Title.trim(),Notes:F.Notes,Priority:String(F.Priority),Tag:F.Tag,Date:F.Date,Time:F.Time,AssignedTo:F.Type==='team'?(F.AssignedTo||'Anyone'):'',Checklist:clStr,
+     Type:F.Type,Owner:F.Type==='team'?'':(F.Owner||S.viewAs||S.user.name)},kindFields);
   if(!existing) S.items.push(it);
   closeModal(); render();
   mutate('saveItem',{item:it});
@@ -950,6 +954,10 @@ document.addEventListener('click',ev=>{
     case 'new-appt': openEditor({team:el.dataset.team==='1',appt:true});break;
     case 'link': break; // let the map link open normally
     case 'f-kind': syncForm();F.Kind=el.dataset.v;renderModal();break;
+    case 'f-where': syncForm();
+      if(el.dataset.v==='team'){F.Type='team';if(!F.AssignedTo||F.AssignedTo==='')F.AssignedTo='Anyone'}
+      else{F.Type='personal';if(!F.Owner)F.Owner=S.viewAs||S.user.name}
+      renderModal();break;
     case 'newrule': openEditor({team:el.dataset.team==='1',ruleMode:true});break;
     case 'openrule': {const r=S.rules.find(x=>x.ID===el.dataset.id);if(r)openEditor({rule:r});break}
     case 'openres': {const it=findItem(el.dataset.id);if(it){S.date=it.Completed==='Yes'?it.CompletedDate:(it.Date<today()?today():it.Date);S.tab=it.Type==='team'?'team':'day';
