@@ -119,7 +119,7 @@ button{cursor:pointer;background:none;border:0;padding:0}
 .tlogo{width:24px;height:24px;border-radius:50%;flex:none;display:block;box-shadow:0 0 0 1px var(--line),0 1px 2px rgba(0,0,0,.12);background:#fff}
 .tagwrap{display:inline-flex;align-items:center;gap:6px}
 .chip .clogo{width:18px;height:18px;border-radius:50%;margin:-2px 6px -4px -4px;vertical-align:middle;box-shadow:0 0 0 1px var(--line)}
-.wrow .wlogo{width:15px;height:15px;border-radius:50%;flex:none;align-self:center;box-shadow:0 0 0 1px var(--line)}
+.wrow .wlogo,.mrow .wlogo{width:15px;height:15px;border-radius:50%;flex:none;align-self:center;box-shadow:0 0 0 1px var(--line)}
 .carry{color:var(--p1);font-weight:600}
 .timep{font-weight:600;color:var(--ink)}
 .who{display:inline-flex;align-items:center;gap:4px}
@@ -145,6 +145,36 @@ button{cursor:pointer;background:none;border:0;padding:0}
 .wrow i{flex:none;width:8px;height:8px;border-radius:50%;transform:translateY(-1px)}
 .wrow i.p1{background:var(--p1)} .wrow i.p2{background:var(--p2)} .wrow i.p3{background:var(--p3)}
 .wrow.done{color:var(--muted);text-decoration:line-through}
+.wrow.preview{color:var(--muted);font-style:italic}
+.item.preview{opacity:.72}.item.preview .box{border-style:dashed}
+.pd{flex:none;width:7px;height:7px;border-radius:50%;display:inline-block}
+.pd.p1{background:var(--p1)}.pd.p2{background:var(--p2)}.pd.p3{background:var(--p3)}
+.pd.done{opacity:.35}.pd.preview{background:transparent!important;box-shadow:inset 0 0 0 1.5px var(--muted)}
+.calbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.calbar .seg2{margin-bottom:0}
+.mhead{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px}
+.mhead div{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);text-align:center;font-weight:600;padding:2px 0}
+.month{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.mcell{background:var(--card);border-radius:10px;min-height:66px;padding:6px 5px;cursor:pointer;box-shadow:var(--shadow);border:2px solid transparent;display:flex;flex-direction:column;gap:4px;min-width:0}
+.mcell.out{opacity:.38}
+.mcell.today{border-color:var(--accent)}
+.mcell .num{font-family:var(--serif);font-weight:650;font-size:14px;line-height:1}
+.mcell.today .num{color:var(--accent)}
+.mcell.past .num{color:var(--muted)}
+.mdots{display:flex;flex-wrap:wrap;gap:3px;align-items:center}
+.mdots small{font-size:10px;color:var(--muted);line-height:1}
+.mrows{display:none}
+.mrow{font-size:12px;line-height:1.25;display:flex;gap:5px;align-items:center;white-space:nowrap;overflow:hidden}
+.mrow span{overflow:hidden;text-overflow:ellipsis}
+.mrow.done{color:var(--muted);text-decoration:line-through}
+.mrow.preview{color:var(--muted);font-style:italic}
+.mmore{font-size:11px;color:var(--muted)}
+@media (min-width:700px){.mcell{min-height:116px;padding:8px}.mrows{display:flex;flex-direction:column;gap:3px}.mdots{display:none}.mhead div{text-align:left;padding-left:8px}}
+.tag.Meet{background:transparent;color:var(--p3);border:1px solid var(--p3);padding:1px 6px}
+.item.appt .box{border-radius:50%}
+.item.past .title{color:var(--muted)}
+.loc{color:var(--ink);text-decoration:none;border-bottom:1px dotted var(--muted)}
+.morelinks{display:flex;gap:18px;flex-wrap:wrap}
 .wmore,.wnone{font-size:12px;color:var(--muted);padding-top:3px}
 
 /* search & more */
@@ -238,7 +268,7 @@ textarea.field{min-height:90px;resize:vertical;line-height:1.4}
 /* =============================================================
  *  STEP 1 OF SETUP: paste your Apps Script Web App URL below
  * ============================================================= */
-const API_URL = 'https://script.google.com/macros/s/AKfycbwLh3KpbEaVbnx85ptYlONf-hwH5DuC9BYYRNuZK_7NwLwGhRAokUMzBfGBinQR6uub6A/exec';
+const API_URL = 'PASTE_YOUR_WEB_APP_URL_HERE';
 
 /* ------------------------------------------------------------- */
 const PRI_LABEL = {1:'Must do', 2:'Should do', 3:'Could do'};
@@ -257,7 +287,7 @@ const LS = {creds:'vp_creds', cache:'vp_cache', users:'vp_users'};
 const S = {
   user:null, creds:null, users:[], items:[], rules:[],
   tab:'day', date:today(), viewAs:null, tagFilter:'all', teamFilter:'all',
-  weekStart:null, weekMode:'mine', search:'', quickPri:2, quickAssign:'Anyone',
+  weekStart:null, weekMode:'mine', calView:(function(){try{return localStorage.getItem('vp_calview')||'month'}catch(e){return 'month'}})(), monthStart:null, search:'', quickPri:2, quickAssign:'Anyone',
   loginName:null, pin:'', loginErr:'', syncState:'ok'
 };
 let F = null;           // editor form state
@@ -273,6 +303,7 @@ function daysBetween(a,b){return Math.round((Date.parse(b+'T12:00:00Z')-Date.par
 function dObj(s){return new Date(s+'T12:00:00Z')}
 function fmt(s,o){return dObj(s).toLocaleDateString('en-US',Object.assign({timeZone:'UTC'},o))}
 function fmtShort(s){return fmt(s,{month:'short',day:'numeric'})}
+function fmtRange(a,b){return b&&b>a?fmtTime(a)+' – '+fmtTime(b):fmtTime(a)}
 function fmtTime(t){if(!t)return '';let[h,m]=t.split(':').map(Number);const ap=h>=12?'PM':'AM';h=h%12||12;return h+':'+pad2(m)+' '+ap}
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function first(n){return String(n||'').split(' ')[0]}
@@ -365,6 +396,10 @@ function dayEntries(D,list){
   list.forEach(it=>{
     if(it.Deleted==='Yes') return;
     const done=it.Completed==='Yes', cd=it.CompletedDate;
+    if(it.Kind==='appt'){   // meetings/appointments stay on their own day
+      if(it.Date===D) out.push({it,state:done?'done':(D<T?'past':'active')});
+      return;
+    }
     if(it.Date===D){
       if(done&&cd<=D) out.push({it,state:'done',early:cd<D?cd:null});
       else if(done) out.push({it,state:'moved',note:'Completed '+fmtShort(cd)});
@@ -383,7 +418,7 @@ function dayEntries(D,list){
       out.push({it,state:'done',scheduled:it.Date});
     }
   });
-  const rank={active:0,done:1,moved:2};
+  const rank={active:0,past:1,done:1,moved:2};
   out.sort((a,b)=>{
     if(rank[a.state]!==rank[b.state]) return rank[a.state]-rank[b.state];
     const at=a.it.Time||'99', bt=b.it.Time||'99';
@@ -406,6 +441,32 @@ function teamList(){
     return it.AssignedTo===f;
   });
 }
+function ruleMatches(r,d){
+  const dt=dObj(d), dow=dt.getUTCDay();
+  if(r.Freq==='daily') return true;
+  if(r.Freq==='weekdays') return dow>=1&&dow<=5;
+  if(r.Freq==='weekly') return String(r.Days||'').split(',').filter(String).map(Number).indexOf(dow)>=0;
+  if(r.Freq==='monthly'){const want=+r.Days||1;const last=new Date(Date.UTC(dt.getUTCFullYear(),dt.getUTCMonth()+1,0)).getUTCDate();return dt.getUTCDate()===Math.min(want,last)}
+  return false;
+}
+function plannerRules(owner){return S.rules.filter(r=>(r.Type==='personal'&&r.Owner===owner)||(r.Type==='team'&&r.AssignedTo===owner))}
+function teamRules(useFilter){
+  const f=useFilter?S.teamFilter:'all';
+  return S.rules.filter(r=>{if(r.Type!=='team')return false;if(f==='all')return true;if(f==='open')return !r.AssignedTo||r.AssignedTo==='Anyone';return r.AssignedTo===f});
+}
+// Future copies of repeating items that haven't been created yet (so you can plan months ahead)
+function repeatPreviews(D,rules,list){
+  if(D<=today()) return [];
+  const out=[];
+  rules.forEach(r=>{
+    if(r.Active==='No'||D<r.StartDate||(r.LastGenerated&&D<=r.LastGenerated)||!ruleMatches(r,D)) return;
+    if(list.some(it=>it.RecurID===r.ID&&it.Date===D)) return;
+    out.push({state:'preview',it:{ID:'rule:'+r.ID,Type:r.Type,Owner:r.Owner,Title:r.Title,Notes:r.Notes,Priority:r.Priority,Tag:r.Tag,Time:r.Time,
+      AssignedTo:r.AssignedTo,CreatedBy:r.CreatedBy,Checklist:r.Checklist,RecurID:r.ID,Date:D,Kind:r.Kind||'',EndTime:r.EndTime||'',Location:r.Location||''}});
+  });
+  return out.sort((a,b)=>((a.it.Time||'99')<(b.it.Time||'99')?-1:1)||((+a.it.Priority||2)-(+b.it.Priority||2)));
+}
+function entriesFor(D,list,rules){return dayEntries(D,list).concat(repeatPreviews(D,rules,list))}
 function applyTag(entries){
   if(S.tagFilter==='all') return entries;
   return entries.filter(e=>e.it.Tag===S.tagFilter);
@@ -463,7 +524,8 @@ function quickAdd(team){
   return `<form class="quick" id="quickForm" data-team="${team?1:0}">
     <input id="quickInput" placeholder="${team?'Add a team task…':'Add something to do…'}" autocomplete="off" enterkeyhint="done">
     ${assign}<div class="qp">${pri}</div><button type="submit" class="add">Add</button></form>
-    <button class="morelink" data-act="new-full" data-team="${team?1:0}">+ Add with notes, time, steps or repeat</button>`;
+    <div class="morelinks"><button class="morelink" data-act="new-full" data-team="${team?1:0}">+ Add with notes, time, steps or repeat</button>
+    <button class="morelink" data-act="new-appt" data-team="${team?1:0}">🕘 + Add a meeting / appointment</button></div>`;
 }
 
 function tagChips(owner){
@@ -475,10 +537,14 @@ function tagChips(owner){
 
 function listHTML(entries,emptyMsg){
   if(!entries.length) return `<div class="page"><div class="empty">${emptyMsg}</div></div>`;
-  const active=entries.filter(e=>e.state==='active'), done=entries.filter(e=>e.state==='done'), moved=entries.filter(e=>e.state==='moved');
+  const sched=entries.filter(e=>e.it.Kind==='appt').sort((a,b)=>((a.it.Time||'99')<(b.it.Time||'99')?-1:1));
+  const rest=entries.filter(e=>e.it.Kind!=='appt');
+  const active=rest.filter(e=>e.state==='active'), done=rest.filter(e=>e.state==='done'), moved=rest.filter(e=>e.state==='moved'), prev=rest.filter(e=>e.state==='preview');
   let h='';
-  if(active.length) h+=`<div class="page">${active.map(itemHTML).join('')}</div>`;
-  else h+=`<div class="page"><div class="empty">${S.date<today()?'Nothing left open on this day.':'All clear — nothing left to do. 🎉'}</div></div>`;
+  if(sched.length) h+=`<div class="section-title" style="margin-top:4px">Schedule (${sched.length})</div><div class="page">${sched.map(itemHTML).join('')}</div>`;
+  if(active.length) h+=`${sched.length?'<div class="section-title">To do</div>':''}<div class="page">${active.map(itemHTML).join('')}</div>`;
+  else if(!prev.length&&!sched.length) h+=`<div class="page"><div class="empty">${S.date<today()?'Nothing left open on this day.':'All clear — nothing left to do. 🎉'}</div></div>`;
+  if(prev.length) h+=`<div class="section-title">Repeating — will appear on this day (${prev.length})</div><div class="page">${prev.map(itemHTML).join('')}</div>`;
   if(done.length) h+=`<div class="section-title">Done (${done.length})</div><div class="page">${done.map(itemHTML).join('')}</div>`;
   if(moved.length) h+=`<div class="section-title">Moved forward (${moved.length})</div><div class="page">${moved.map(itemHTML).join('')}</div>`;
   return h;
@@ -487,7 +553,11 @@ function listHTML(entries,emptyMsg){
 function itemHTML(e){
   const it=e.it, p=+it.Priority||2, cl=parseCL(it.Checklist), cld=cl.filter(x=>x.d).length;
   const m=[];
-  if(it.Time) m.push(`<span class="timep">${fmtTime(it.Time)}</span>`);
+  const appt=it.Kind==='appt';
+  if(it.Time) m.push(`<span class="timep">${appt?'🕘 ':''}${appt?fmtRange(it.Time,it.EndTime):fmtTime(it.Time)}</span>`);
+  if(appt) m.push(`<span class="tag Meet">Meeting</span>`);
+  if(appt&&it.Location) m.push(`<a class="loc" data-act="link" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(it.Location)}">📍 ${esc(it.Location)}</a>`);
+  if(e.state==='past') m.push(`<span>Past</span>`);
   if(it.Type==='team'&&S.tab==='day') m.push(`<span class="tag Team">Team</span>`);
   if(it.Tag){const lg=logoFor(it.Tag,it.Owner);m.push(`<span class="tagwrap">${lg?`<img class="tlogo" src="${lg}" alt="">`:''}<span class="tag ${esc(it.Tag)}">${esc(it.Tag)}</span></span>`)}
   if(e.state==='active'&&e.carried>0) m.push(`<span class="carry">↻ Carried ${e.carried} day${e.carried===1?'':'s'}</span>`);
@@ -495,6 +565,7 @@ function itemHTML(e){
   if(e.state==='done'&&e.scheduled) m.push(`<span>Done early (was set for ${fmtShort(e.scheduled)})</span>`);
   if(e.state==='done'&&e.early) m.push(`<span>Done early on ${fmtShort(e.early)}</span>`);
   if(e.state==='moved') m.push(`<span>→ ${esc(e.note)}</span>`);
+  if(e.state==='preview') m.push(`<span>Scheduled repeat · tap to edit the series</span>`);
   if(cl.length) m.push(`<span>☑ ${cld}/${cl.length} steps</span>`);
   if(it.RecurID) m.push(`<span title="Repeating">⟳ Repeats</span>`);
   if(it.Type==='team'){
@@ -504,9 +575,9 @@ function itemHTML(e){
     if(e.state==='done'&&it.CompletedBy) m.push(`<span class="who"><i style="--c:${esc(userColor(it.CompletedBy))}"></i>Done by ${esc(first(it.CompletedBy))}</span>`);
   }
   const prev=it.Notes?`<div class="preview">✎ ${esc(it.Notes.split('\n')[0])}</div>`:'';
-  const editable=canEdit(it);
-  const checkAttr=e.state==='moved'?'disabled title="Already moved forward"':'';
-  return `<div class="item p${p} ${e.state}" data-id="${esc(it.ID)}">
+  const editable=e.state!=='preview'&&canEdit(it);
+  const checkAttr=e.state==='moved'?'disabled title="Already moved forward"':(e.state==='preview'?'disabled title="You can check this off on the day"':'');
+  return `<div class="item p${p} ${e.state} ${appt?'appt':''}" data-id="${esc(it.ID)}">
     <button class="check" data-act="toggle" ${checkAttr} aria-label="Check off"><span class="box">${ICON.check}</span></button>
     <div class="body" data-act="open"><div class="title">${esc(it.Title)}</div>${prev}<div class="meta">${m.join('')}</div></div>
     <button class="pri p${p}" data-act="cycle" ${editable?'title="Tap to change importance"':'disabled title="Importance"'}>${p}</button></div>`;
@@ -514,7 +585,7 @@ function itemHTML(e){
 
 function renderDay(){
   const owner=S.viewAs||S.user.name;
-  const entries=applyTag(dayEntries(S.date,plannerList(owner)));
+  const entries=applyTag(entriesFor(S.date,plannerList(owner),plannerRules(owner)));
   const active=entries.filter(e=>e.state==='active').length, done=entries.filter(e=>e.state==='done').length;
   let viewas='';
   if(isAdmin()&&S.users.length>1){
@@ -526,7 +597,7 @@ function renderDay(){
 }
 
 function renderTeam(){
-  const entries=applyTag(dayEntries(S.date,teamList()));
+  const entries=applyTag(entriesFor(S.date,teamList(),teamRules(true)));
   const active=entries.filter(e=>e.state==='active').length, done=entries.filter(e=>e.state==='done').length;
   const opts=[['all','Everyone'],['open','Open to anyone']].concat(S.users.map(u=>[u.name,u.name===S.user.name?'Assigned to me':first(u.name)]));
   const chips=`<div class="chips">${opts.map(([v,l])=>`<button class="chip ${S.teamFilter===v?'on':''}" data-act="teamf" data-v="${esc(v)}">${v!=='all'&&v!=='open'?`<span class="dot" style="background:${esc(userColor(v))}"></span>`:''}${esc(l)}</button>`).join('')}</div>`;
@@ -536,29 +607,59 @@ function renderTeam(){
 }
 
 function weekStartOf(d){return addDays(d,-dObj(d).getUTCDay())}
-function renderWeek(){
+function calSource(){
+  if(S.weekMode==='team') return {list:S.items.filter(it=>it.Type==='team'),rules:teamRules(false),owner:''};
+  const o=S.viewAs||S.user.name; return {list:plannerList(o),rules:plannerRules(o),owner:o};
+}
+function navBtn(act,ch,label){return `<button class="navbtn" data-act="${act}" aria-label="${label}" style="width:40px;height:40px;border-radius:12px;background:var(--card);box-shadow:var(--shadow);font-size:20px;color:var(--muted);flex:none">${ch}</button>`}
+function calToggles(src){
+  return `<div class="calbar"><div class="seg2"><button class="${S.calView==='week'?'on':''}" data-act="calview" data-v="week">Week</button><button class="${S.calView==='month'?'on':''}" data-act="calview" data-v="month">Month</button></div>
+    <div class="seg2"><button class="${S.weekMode==='mine'?'on':''}" data-act="wkmode" data-v="mine">${S.viewAs&&S.viewAs!==S.user.name?esc(first(S.viewAs))+"'s planner":'My planner'}</button><button class="${S.weekMode==='team'?'on':''}" data-act="wkmode" data-v="team">Team</button></div></div>
+    ${tagChips(src.owner)}`;
+}
+function renderWeek(){ return S.calView==='month'?renderMonth():renderWeekGrid(); }
+function renderWeekGrid(){
   if(!S.weekStart) S.weekStart=weekStartOf(S.date);
-  const ws=S.weekStart, we=addDays(ws,6), T=today();
-  const list=S.weekMode==='team'?S.items.filter(it=>it.Type==='team'):plannerList(S.viewAs||S.user.name);
+  const ws=S.weekStart, we=addDays(ws,6), T=today(), src=calSource();
   let days='';
   for(let i=0;i<7;i++){
     const d=addDays(ws,i);
-    const en=applyTag(dayEntries(d,list)).filter(e=>e.state!=='moved');
-    const a=en.filter(e=>e.state==='active').length, dn=en.filter(e=>e.state==='done').length;
+    const en=applyTag(entriesFor(d,src.list,src.rules)).filter(e=>e.state!=='moved');
+    const a=en.filter(e=>e.state==='active'||e.state==='preview').length, dn=en.filter(e=>e.state==='done').length;
     const shown=en.slice(0,7);
-    const rows=shown.map(e=>{const lg=e.it.Tag?logoFor(e.it.Tag,e.it.Owner):null;return `<div class="wrow ${e.state}"><i class="p${+e.it.Priority||2}"></i>${lg?`<img class="wlogo" src="${lg}" alt="">`:''}<span>${e.it.Time?`<b>${fmtTime(e.it.Time)}</b> `:''}${esc(e.it.Title)}</span></div>`}).join('');
+    const rows=shown.map(e=>{const lg=e.it.Tag?logoFor(e.it.Tag,e.it.Owner):null;return `<div class="wrow ${e.state}"><i class="p${+e.it.Priority||2}"></i>${lg?`<img class="wlogo" src="${lg}" alt="">`:''}<span>${e.state==='preview'?'⟳ ':''}${e.it.Time?`<b>${fmtTime(e.it.Time)}</b> `:''}${esc(e.it.Title)}</span></div>`}).join('');
     days+=`<div class="wday ${d===T?'today':''}" data-act="goday" data-d="${d}">
       <h4>${DOW[i]} ${fmt(d,{day:'numeric'})}<small>${a?a+' open':''}${a&&dn?' · ':''}${dn?dn+' done':''}</small></h4>
       ${rows||'<div class="wnone">—</div>'}${en.length>7?`<div class="wmore">+${en.length-7} more</div>`:''}</div>`;
   }
   const label=fmt(ws,{month:'short',day:'numeric'})+' – '+fmt(we,{month:(dObj(ws).getUTCMonth()!==dObj(we).getUTCMonth()?'short':undefined),day:'numeric'});
-  return `<div class="weekbar"><button class="navbtn" data-act="wk-prev" style="width:40px;height:40px;border-radius:12px;background:var(--card);box-shadow:var(--shadow);font-size:20px;color:var(--muted)">‹</button>
-    <div class="wklbl">${label}</div>
-    <button class="todaybtn ${ws===weekStartOf(T)?'off':''}" data-act="wk-today">This week</button>
-    <button class="navbtn" data-act="wk-next" style="width:40px;height:40px;border-radius:12px;background:var(--card);box-shadow:var(--shadow);font-size:20px;color:var(--muted)">›</button></div>
-    <div class="seg2"><button class="${S.weekMode==='mine'?'on':''}" data-act="wkmode" data-v="mine">My planner</button><button class="${S.weekMode==='team'?'on':''}" data-act="wkmode" data-v="team">Team</button></div>
-    ${tagChips(S.weekMode==='team'?'':(S.viewAs||S.user.name))}<div class="week">${days}</div>
-    <p class="summary">Tap a day to open it. Unfinished items roll forward to today; future days show only what’s scheduled for them.</p>`;
+  return `<div class="weekbar">${navBtn('wk-prev','‹','Previous week')}<div class="wklbl">${label}</div>
+    <button class="todaybtn ${ws===weekStartOf(T)?'off':''}" data-act="wk-today">This week</button>${navBtn('wk-next','›','Next week')}</div>
+    ${calToggles(src)}<div class="week">${days}</div>
+    <p class="summary">Tap a day to open it and add or edit items. Unfinished items roll forward to today; ⟳ marks upcoming repeating items.</p>`;
+}
+function monthStartOf(d){return d.slice(0,8)+'01'}
+function shiftMonth(ms,n){const d=dObj(ms);return new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+n,1,12)).toISOString().slice(0,10)}
+function renderMonth(){
+  if(!S.monthStart) S.monthStart=monthStartOf(S.date);
+  const ms=S.monthStart, T=today(), src=calSource(), md=dObj(ms);
+  const daysIn=new Date(Date.UTC(md.getUTCFullYear(),md.getUTCMonth()+1,0)).getUTCDate();
+  const gridStart=weekStartOf(ms), gridEnd=addDays(weekStartOf(ms.slice(0,8)+pad2(daysIn)),6);
+  let cells='';
+  for(let d=gridStart; d<=gridEnd; d=addDays(d,1)){
+    const out=d.slice(0,7)!==ms.slice(0,7);
+    const en=applyTag(entriesFor(d,src.list,src.rules)).filter(e=>e.state!=='moved');
+    const dots=en.slice(0,6).map(e=>`<i class="pd p${+e.it.Priority||2} ${e.state==='done'?'done':''} ${e.state==='preview'?'preview':''}"></i>`).join('')+(en.length>6?`<small>+${en.length-6}</small>`:'');
+    const rows=en.slice(0,4).map(e=>{const lg=e.it.Tag?logoFor(e.it.Tag,e.it.Owner):null;
+      return `<div class="mrow ${e.state}"><i class="pd p${+e.it.Priority||2}"></i>${lg?`<img class="wlogo" src="${lg}" alt="">`:''}<span>${e.state==='preview'?'⟳ ':''}${e.it.Time?fmtTime(e.it.Time).replace(':00','')+' ':''}${esc(e.it.Title)}</span></div>`}).join('')+(en.length>4?`<div class="mmore">+${en.length-4} more</div>`:'');
+    cells+=`<div class="mcell ${out?'out':''} ${d===T?'today':''} ${d<T?'past':''}" data-act="goday" data-d="${d}" title="${fmt(d,{weekday:'long',month:'long',day:'numeric'})}">
+      <span class="num">${+d.slice(8)}</span><div class="mdots">${dots}</div><div class="mrows">${rows}</div></div>`;
+  }
+  return `<div class="weekbar">${navBtn('mo-prev','‹','Previous month')}<div class="wklbl">${fmt(ms,{month:'long',year:'numeric'})}</div>
+    <button class="todaybtn ${ms===monthStartOf(T)?'off':''}" data-act="mo-today">This month</button>${navBtn('mo-next','›','Next month')}</div>
+    ${calToggles(src)}
+    <div class="mhead">${DOW.map(x=>`<div>${x}</div>`).join('')}</div><div class="month">${cells}</div>
+    <p class="summary">Tap any day to open it — you can add items to any future date to plan months ahead. Dots are colored by importance; hollow dots (⟳) are upcoming repeating items.</p>`;
 }
 
 function renderSearch(){
@@ -613,7 +714,7 @@ function renderNav(){
   const T=today();
   const myOpen=dayEntries(T,plannerList(S.user.name)).filter(e=>e.state==='active').length;
   const teamOpen=dayEntries(T,S.items.filter(it=>it.Type==='team'&&(it.AssignedTo===S.user.name||!it.AssignedTo||it.AssignedTo==='Anyone'))).filter(e=>e.state==='active').length;
-  const tabs=[['day','My Day',ICON.day,myOpen],['team','Team',ICON.team,teamOpen],['week','Week',ICON.week,0],['search','Search',ICON.search,0],['more','More',ICON.more,0]];
+  const tabs=[['day','My Day',ICON.day,myOpen],['team','Team',ICON.team,teamOpen],['week','Calendar',ICON.week,0],['search','Search',ICON.search,0],['more','More',ICON.more,0]];
   return `<nav class="nav"><div class="in">${tabs.map(([k,l,ic,n])=>`<button class="${S.tab===k?'on':''}" data-act="tab" data-tab="${k}">${ic}${n?`<span class="badge">${n}</span>`:''}${l}</button>`).join('')}</div></nav>`;
 }
 
@@ -676,7 +777,7 @@ function quickSubmit(form){
   const T=today(); let date=S.date;
   if(date<T){date=T;toast('Added to today (that day has passed)')}
   const owner=S.viewAs||S.user.name;
-  const it={ID:uid('i'),Type:team?'team':'personal',Owner:team?'':owner,Title:title,Notes:'',Priority:String(S.quickPri),
+  const it={ID:uid('i'),Kind:'',EndTime:'',Location:'',Type:team?'team':'personal',Owner:team?'':owner,Title:title,Notes:'',Priority:String(S.quickPri),
     Tag:S.tagFilter!=='all'?S.tagFilter:'',Date:date,Time:'',AssignedTo:team?(document.getElementById('quickAssign').value||'Anyone'):'',
     CreatedBy:S.user.name,CreatedAt:new Date().toISOString(),Completed:'',CompletedDate:'',CompletedBy:'',Checklist:'',RecurID:'',Deleted:''};
   if(team) S.quickAssign=it.AssignedTo;
@@ -691,18 +792,18 @@ function openEditor(opts){
   if(opts.item){
     const it=opts.item;
     F={mode:'item',isNew:false,ID:it.ID,Type:it.Type,Owner:it.Owner,Title:it.Title,Notes:it.Notes||'',Priority:+it.Priority||2,Tag:it.Tag||'',
-      Date:it.Date,Time:it.Time||'',AssignedTo:it.AssignedTo||'Anyone',Checklist:parseCL(it.Checklist).map(x=>({t:x.t,d:!!x.d})),
+      Date:it.Date,Time:it.Time||'',Kind:it.Kind||'',EndTime:it.EndTime||'',Location:it.Location||'',AssignedTo:it.AssignedTo||'Anyone',Checklist:parseCL(it.Checklist).map(x=>({t:x.t,d:!!x.d})),
       Freq:'none',Days:[],RecurID:it.RecurID,CreatedBy:it.CreatedBy,CreatedAt:it.CreatedAt,Completed:it.Completed==='Yes',CompletedBy:it.CompletedBy,CompletedDate:it.CompletedDate,
       readOnly:!canEdit(it)};
   } else if(opts.rule){
     const r=opts.rule;
     F={mode:'rule',isNew:false,ID:r.ID,Type:r.Type,Owner:r.Owner,Title:r.Title,Notes:r.Notes||'',Priority:+r.Priority||2,Tag:r.Tag||'',
-      Date:r.StartDate,Time:r.Time||'',AssignedTo:r.AssignedTo||'Anyone',Checklist:parseCL(r.Checklist),Freq:r.Freq,
+      Date:r.StartDate,Time:r.Time||'',Kind:r.Kind||'',EndTime:r.EndTime||'',Location:r.Location||'',AssignedTo:r.AssignedTo||'Anyone',Checklist:parseCL(r.Checklist),Freq:r.Freq,
       Days:r.Freq==='weekly'?String(r.Days||'').split(',').filter(String).map(Number):[],CreatedBy:r.CreatedBy,readOnly:!canEdit(r)};
   } else {
     const team=!!opts.team; const d=S.date<T?T:S.date;
     F={mode:opts.ruleMode?'rule':'item',isNew:true,ID:null,Type:team?'team':'personal',Owner:team?'':(S.viewAs||S.user.name),Title:'',Notes:'',
-      Priority:S.quickPri,Tag:S.tagFilter!=='all'?S.tagFilter:'',Date:d,Time:'',AssignedTo:team?(S.teamFilter!=='all'&&S.teamFilter!=='open'?S.teamFilter:'Anyone'):'',
+      Priority:S.quickPri,Tag:S.tagFilter!=='all'?S.tagFilter:'',Date:d,Time:'',Kind:opts.appt?'appt':'',EndTime:'',Location:'',AssignedTo:team?(S.teamFilter!=='all'&&S.teamFilter!=='open'?S.teamFilter:'Anyone'):'',
       Checklist:[],Freq:opts.ruleMode?'weekly':'none',Days:[dObj(d).getUTCDay()],readOnly:false};
   }
   renderModal();
@@ -715,6 +816,8 @@ function syncForm(){
   if(g('f_notes')) F.Notes=g('f_notes').value;
   if(g('f_date')) F.Date=g('f_date').value||F.Date;
   if(g('f_time')) F.Time=g('f_time').value;
+  if(g('f_end')) F.EndTime=g('f_end').value;
+  if(g('f_loc')) F.Location=g('f_loc').value;
   if(g('f_assign')) F.AssignedTo=g('f_assign').value;
   if(g('f_freq')) F.Freq=g('f_freq').value;
   document.querySelectorAll('[data-cl-text]').forEach(el=>{const i=+el.dataset.clText;if(F.Checklist[i])F.Checklist[i].t=el.value});
@@ -723,8 +826,9 @@ function renderModal(){
   const m=document.getElementById('modal');
   if(!F){m.innerHTML='';return}
   const ro=F.readOnly, team=F.Type==='team';
-  const title=F.mode==='rule'?(F.isNew?'New repeating '+(team?'team task':'item'):'Repeating '+(team?'team task':'item')):
-    (F.isNew?(team?'New team task':'New item'):(team?'Team task':'Edit item'));
+  const noun=F.Kind==='appt'?(team?'team meeting':'meeting'):(team?'team task':'item');
+  const title=F.mode==='rule'?(F.isNew?'New repeating '+noun:'Repeating '+noun):
+    (F.isNew?'New '+noun:(F.Kind==='appt'?'Edit '+noun:(team?'Team task':'Edit item')));
   let info='';
   if(!F.isNew&&team) info+=`<div class="info">Set up by <b>${esc(F.CreatedBy)}</b>${F.CreatedAt?' on '+fmtShort(F.CreatedAt.slice(0,10)):''}${F.Completed?` · Completed by <b>${esc(F.CompletedBy)}</b> on ${fmtShort(F.CompletedDate)}`:''}${ro?'<br>Only the person who set this up, a manager, or Clint can change it — but you can check it off and tick steps.':''}</div>`;
   else if(!F.isNew&&F.Completed&&F.mode==='item') info+=`<div class="info">Completed on <b>${fmtShort(F.CompletedDate)}</b>${F.Date<F.CompletedDate?' (originally planned for '+fmtShort(F.Date)+')':''}</div>`;
@@ -739,7 +843,7 @@ function renderModal(){
   if(ro){
     body=`<div class="lbl">Task</div><div class="ro" style="font-weight:600;font-size:18px">${esc(F.Title)}</div>
       ${F.Notes?`<div class="lbl">Notes</div><div class="ro">${esc(F.Notes)}</div>`:''}
-      <div class="lbl">Details</div><div class="ro">Importance ${F.Priority} – ${PRI_LABEL[F.Priority]}${F.Tag?' · '+esc(F.Tag):''}<br>${fmt(F.Date,{weekday:'long',month:'long',day:'numeric'})}${F.Time?' at '+fmtTime(F.Time):''}${team?'<br>For: '+esc(F.AssignedTo||'Anyone'):''}</div>
+      <div class="lbl">Details</div><div class="ro">Importance ${F.Priority} – ${PRI_LABEL[F.Priority]}${F.Tag?' · '+esc(F.Tag):''}<br>${fmt(F.Date,{weekday:'long',month:'long',day:'numeric'})}${F.Time?' at '+fmtRange(F.Time,F.EndTime):''}${F.Location?'<br>📍 '+esc(F.Location):''}${team?'<br>For: '+esc(F.AssignedTo||'Anyone'):''}</div>
       ${F.Checklist.length?`<div class="lbl">Steps</div>${cl}`:''}`;
   } else {
     const pri=[1,2,3].map(v=>`<button type="button" class="p${v} ${F.Priority===v?'on':''}" data-act="f-pri" data-v="${v}">${v} · ${PRI_LABEL[v]}</button>`).join('');
@@ -751,14 +855,22 @@ function renderModal(){
       rep=`<label class="lbl" for="f_freq">Repeat</label><select class="field" id="f_freq" data-act="f-freq">${opts.map(([v,l])=>`<option value="${v}" ${F.Freq===v?'selected':''}>${l}</option>`).join('')}</select>`;
       if(F.Freq==='weekly') rep+=`<div class="seg days" style="margin-top:8px">${DOW.map((d,i)=>`<button type="button" class="${F.Days.indexOf(i)>=0?'on':''}" data-act="f-day" data-v="${i}">${d.slice(0,2)}</button>`).join('')}</div>`;
     }
-    body=`<label class="lbl" for="f_title">What needs to be done?</label><input class="field" id="f_title" value="${esc(F.Title)}" placeholder="e.g. Call the adjuster on the Smith job" autocomplete="off">
+    const isA=F.Kind==='appt';
+    const kindSeg=`<div class="seg" style="margin-top:10px"><button type="button" class="${!isA?'on':''}" data-act="f-kind" data-v="">✓ To-do</button><button type="button" class="${isA?'on':''}" data-act="f-kind" data-v="appt">🕘 Meeting / appointment</button></div>`;
+    const timeBlock=isA?
+      `<label class="lbl" for="f_date">${F.mode==='rule'?'Starts on':'Date'}</label><input class="field" type="date" id="f_date" value="${F.Date}">
+       <div class="row2"><div><label class="lbl" for="f_time">Start time</label><input class="field" type="time" id="f_time" value="${F.Time}"></div>
+       <div><label class="lbl" for="f_end">End time (optional)</label><input class="field" type="time" id="f_end" value="${F.EndTime}"></div></div>
+       <label class="lbl" for="f_loc">Location (optional)</label><input class="field" id="f_loc" value="${esc(F.Location)}" placeholder="Address, office, Zoom…" autocomplete="off">`:
+      `<div class="row2"><div><label class="lbl" for="f_date">${F.mode==='rule'?'Starts on':'Date'}</label><input class="field" type="date" id="f_date" value="${F.Date}"></div>
+       <div><label class="lbl" for="f_time">Time (optional)</label><input class="field" type="time" id="f_time" value="${F.Time}"></div></div>`;
+    body=`${kindSeg}<label class="lbl" for="f_title">${isA?'What’s the meeting?':'What needs to be done?'}</label><input class="field" id="f_title" value="${esc(F.Title)}" placeholder="${isA?'e.g. Walkthrough with adjuster at Smith job':'e.g. Call the adjuster on the Smith job'}" autocomplete="off">
       <label class="lbl" for="f_notes">Notes</label><textarea class="field" id="f_notes" placeholder="Details, phone numbers, addresses…">${esc(F.Notes)}</textarea>
       <div class="lbl">Importance</div><div class="seg">${pri}</div>
       <div class="lbl">Category</div><div class="seg">${tags}</div>
-      <div class="row2"><div><label class="lbl" for="f_date">${F.mode==='rule'?'Starts on':'Date'}</label><input class="field" type="date" id="f_date" value="${F.Date}"></div>
-      <div><label class="lbl" for="f_time">Time (optional)</label><input class="field" type="time" id="f_time" value="${F.Time}"></div></div>
+      ${timeBlock}
       ${assign}${rep}
-      <div class="lbl">Steps (checklist)</div>${cl}
+      <div class="lbl">${isA?'Agenda / steps':'Steps (checklist)'}</div>${cl}
       <div class="cladd"><input class="field" id="f_newstep" placeholder="Add a step…" autocomplete="off"><button type="button" class="btn ghost" data-act="cl-add">Add</button></div>`;
   }
   const delOK=!F.isNew&&(F.mode==='rule'?canDelete({Type:F.Type,Owner:F.Owner,CreatedBy:F.CreatedBy}):canDelete({Type:F.Type,Owner:F.Owner,CreatedBy:F.CreatedBy}));
@@ -781,12 +893,15 @@ function saveForm(){
   const ns=document.getElementById('f_newstep'); if(ns&&ns.value.trim()) F.Checklist.push({t:ns.value.trim(),d:false});
   const checklist=F.Checklist.filter(x=>x.t.trim());
   const clStr=checklist.length?JSON.stringify(checklist):'';
+  if(F.Kind==='appt'&&!F.Time){toast('Please pick a start time for the meeting');return}
+  if(F.Kind==='appt'&&F.EndTime&&F.EndTime<=F.Time){toast('End time needs to be after the start time');return}
+  const kindFields={Kind:F.Kind==='appt'?'appt':'',EndTime:F.Kind==='appt'?F.EndTime:'',Location:F.Kind==='appt'?F.Location.trim():''};
   const isRule=F.mode==='rule'||F.Freq!=='none';
   if(isRule){
     if(F.Freq==='weekly'&&!F.Days.length){toast('Pick at least one day of the week');return}
     const r={ID:F.mode==='rule'&&F.ID?F.ID:uid('r'),Type:F.Type,Owner:F.Owner,Title:F.Title.trim(),Notes:F.Notes,Priority:String(F.Priority),Tag:F.Tag,
       Time:F.Time,AssignedTo:F.Type==='team'?F.AssignedTo:'',Freq:F.Freq,Days:F.Freq==='weekly'?F.Days.slice().sort().join(','):(F.Freq==='monthly'?String(dObj(F.Date).getUTCDate()):''),
-      StartDate:F.Date,Checklist:clStr,CreatedBy:F.CreatedBy||S.user.name,Active:'Yes'};
+      StartDate:F.Date,Checklist:clStr,CreatedBy:F.CreatedBy||S.user.name,Active:'Yes',...kindFields};
     const wasNew=!(F.mode==='rule'&&!F.isNew);
     const i=S.rules.findIndex(x=>x.ID===r.ID); if(i>=0) S.rules[i]=Object.assign(S.rules[i],r); else S.rules.push(r);
     closeModal(); render();
@@ -795,7 +910,7 @@ function saveForm(){
   }
   const existing=F.ID?findItem(F.ID):null;
   const it=Object.assign(existing||{ID:uid('i'),Type:F.Type,Owner:F.Owner,CreatedBy:S.user.name,CreatedAt:new Date().toISOString(),Completed:'',CompletedDate:'',CompletedBy:'',RecurID:'',Deleted:''},
-    {Title:F.Title.trim(),Notes:F.Notes,Priority:String(F.Priority),Tag:F.Tag,Date:F.Date,Time:F.Time,AssignedTo:F.Type==='team'?F.AssignedTo:'',Checklist:clStr});
+    {Title:F.Title.trim(),Notes:F.Notes,Priority:String(F.Priority),Tag:F.Tag,Date:F.Date,Time:F.Time,AssignedTo:F.Type==='team'?F.AssignedTo:'',Checklist:clStr},kindFields);
   if(!existing) S.items.push(it);
   closeModal(); render();
   mutate('saveItem',{item:it});
@@ -819,7 +934,7 @@ document.addEventListener('click',ev=>{
     case 'pickname': S.loginName=el.dataset.n;S.pin='';S.loginErr='';render();break;
     case 'key': pressKey(el.dataset.k);break;
     case 'loginback': S.loginName=null;S.pin='';S.loginErr='';render();break;
-    case 'tab': S.tab=el.dataset.tab; if(S.tab==='week') S.weekStart=weekStartOf(S.date); render(); window.scrollTo(0,0); break;
+    case 'tab': S.tab=el.dataset.tab; if(S.tab==='week'){S.weekStart=weekStartOf(S.date);S.monthStart=monthStartOf(S.date)} render(); window.scrollTo(0,0); break;
     case 'day-prev': S.date=addDays(S.date,-1);render();break;
     case 'day-next': S.date=addDays(S.date,1);render();break;
     case 'go-today': S.date=today();render();break;
@@ -828,13 +943,22 @@ document.addEventListener('click',ev=>{
     case 'teamf': S.teamFilter=el.dataset.v;render();break;
     case 'toggle': if(id&&!el.disabled) toggleItem(id);break;
     case 'cycle': if(id) cyclePriority(id);break;
-    case 'open': if(id){const it=findItem(id);if(it)openEditor({item:it})}break;
+    case 'open': if(id){
+      if(id.indexOf('rule:')===0){const r=S.rules.find(x=>x.ID===id.slice(5));if(r)openEditor({rule:r});break}
+      const it=findItem(id);if(it)openEditor({item:it})}break;
     case 'new-full': openEditor({team:el.dataset.team==='1'});break;
+    case 'new-appt': openEditor({team:el.dataset.team==='1',appt:true});break;
+    case 'link': break; // let the map link open normally
+    case 'f-kind': syncForm();F.Kind=el.dataset.v;renderModal();break;
     case 'newrule': openEditor({team:el.dataset.team==='1',ruleMode:true});break;
     case 'openrule': {const r=S.rules.find(x=>x.ID===el.dataset.id);if(r)openEditor({rule:r});break}
     case 'openres': {const it=findItem(el.dataset.id);if(it){S.date=it.Completed==='Yes'?it.CompletedDate:(it.Date<today()?today():it.Date);S.tab=it.Type==='team'?'team':'day';
       if(it.Type==='personal'&&isAdmin()) S.viewAs=it.Owner; S.tagFilter='all'; if(it.Type==='team') S.teamFilter='all'; render();openEditor({item:it})}break}
     case 'goday': S.date=el.dataset.d;S.tab=S.weekMode==='team'?'team':'day';render();window.scrollTo(0,0);break;
+    case 'calview': S.calView=el.dataset.v;try{localStorage.setItem('vp_calview',S.calView)}catch(e){} render();break;
+    case 'mo-prev': S.monthStart=shiftMonth(S.monthStart,-1);render();break;
+    case 'mo-next': S.monthStart=shiftMonth(S.monthStart,1);render();break;
+    case 'mo-today': S.monthStart=monthStartOf(today());render();break;
     case 'wk-prev': S.weekStart=addDays(S.weekStart,-7);render();break;
     case 'wk-next': S.weekStart=addDays(S.weekStart,7);render();break;
     case 'wk-today': S.weekStart=weekStartOf(today());render();break;
