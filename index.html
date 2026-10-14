@@ -175,6 +175,17 @@ button{cursor:pointer;background:none;border:0;padding:0}
 .item.past .title{color:var(--muted)}
 .loc{color:var(--ink);text-decoration:none;border-bottom:1px dotted var(--muted)}
 .morelinks{display:flex;gap:18px;flex-wrap:wrap}
+.overlay.ntc{z-index:70}
+.ncard{background:var(--paper);border-radius:14px;padding:14px;margin-bottom:10px;border-left:4px solid var(--accent)}
+.nfrom{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted)}
+.nfrom b{color:var(--ink)}
+.ntitle{font-weight:600;font-size:17px;margin:8px 0 4px}
+.nmeta{font-size:13px;color:var(--muted)}
+.seg.people button{flex:0 1 auto;min-width:0;padding:9px 12px}
+.pdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:0}
+.bell{position:relative}
+.bell .badge{top:-4px;left:auto;right:-4px}
+.scopebar{display:flex;align-items:center;gap:10px;margin:0 0 12px}
 .wmore,.wnone{font-size:12px;color:var(--muted);padding-top:3px}
 
 /* search & more */
@@ -262,6 +273,7 @@ textarea.field{min-height:90px;resize:vertical;line-height:1.4}
 <body>
 <div id="app"><div class="loading">Opening your planner…</div></div>
 <div id="modal"></div>
+<div id="notice"></div>
 <div id="toast"></div>
 
 <script>
@@ -287,7 +299,7 @@ const LS = {creds:'vp_creds', cache:'vp_cache', users:'vp_users'};
 const S = {
   user:null, creds:null, users:[], items:[], rules:[],
   tab:'day', date:today(), viewAs:null, tagFilter:'all', teamFilter:'all',
-  weekStart:null, weekMode:'mine', calView:(function(){try{return localStorage.getItem('vp_calview')||'month'}catch(e){return 'month'}})(), monthStart:null, search:'', quickPri:2, quickAssign:'Anyone',
+  notices:[], dayScope:(function(){try{return localStorage.getItem('vp_dayscope')||'mine'}catch(e){return 'mine'}})(), weekStart:null, weekMode:'mine', calView:(function(){try{return localStorage.getItem('vp_calview')||'month'}catch(e){return 'month'}})(), monthStart:null, search:'', quickPri:2, quickAssign:'Anyone',
   loginName:null, pin:'', loginErr:'', syncState:'ok'
 };
 let F = null;           // editor form state
@@ -303,6 +315,7 @@ function daysBetween(a,b){return Math.round((Date.parse(b+'T12:00:00Z')-Date.par
 function dObj(s){return new Date(s+'T12:00:00Z')}
 function fmt(s,o){return dObj(s).toLocaleDateString('en-US',Object.assign({timeZone:'UTC'},o))}
 function fmtShort(s){return fmt(s,{month:'short',day:'numeric'})}
+function fmtStamp(iso){if(!iso)return '';const d=new Date(iso);return d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' at '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}
 function fmtRange(a,b){return b&&b>a?fmtTime(a)+' – '+fmtTime(b):fmtTime(a)}
 function fmtTime(t){if(!t)return '';let[h,m]=t.split(':').map(Number);const ap=h>=12?'PM':'AM';h=h%12||12;return h+':'+pad2(m)+' '+ap}
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -373,7 +386,7 @@ function mutate(action,payload,okMsg){
   });
 }
 function applyData(d){
-  S.items=d.items||[];S.rules=d.rules||[];S.users=d.users||S.users;
+  S.items=d.items||[];S.rules=d.rules||[];S.users=d.users||S.users;S.notices=d.notices||[];
   lsSet(LS.cache,{user:S.user.name,items:S.items,rules:S.rules,users:S.users});
   render();
 }
@@ -429,16 +442,21 @@ function dayEntries(D,list){
   });
   return out;
 }
+function assignees(v){const s=String(v||'').trim();if(!s||s==='Anyone')return [];return s.split(',').map(x=>x.trim()).filter(Boolean)}
+function isAssigned(it,name){return assignees(it.AssignedTo).indexOf(name)>=0}
+function isOpenToAnyone(it){return assignees(it.AssignedTo).length===0}
+function whoText(v){const a=assignees(v);if(!a.length)return 'Anyone';return a.map(first).join(', ')}
+function unionById(a,b){const seen={};return a.concat(b).filter(x=>seen[x.ID]?false:(seen[x.ID]=true))}
 function plannerList(owner){
-  return S.items.filter(it=>(it.Type==='personal'&&it.Owner===owner)||(it.Type==='team'&&it.AssignedTo===owner));
+  return S.items.filter(it=>(it.Type==='personal'&&it.Owner===owner)||(it.Type==='team'&&isAssigned(it,owner)));
 }
 function teamList(){
   const f=S.teamFilter;
   return S.items.filter(it=>{
     if(it.Type!=='team') return false;
     if(f==='all') return true;
-    if(f==='open') return !it.AssignedTo||it.AssignedTo==='Anyone';
-    return it.AssignedTo===f;
+    if(f==='open') return isOpenToAnyone(it);
+    return isAssigned(it,f);
   });
 }
 function ruleMatches(r,d){
@@ -449,10 +467,10 @@ function ruleMatches(r,d){
   if(r.Freq==='monthly'){const want=+r.Days||1;const last=new Date(Date.UTC(dt.getUTCFullYear(),dt.getUTCMonth()+1,0)).getUTCDate();return dt.getUTCDate()===Math.min(want,last)}
   return false;
 }
-function plannerRules(owner){return S.rules.filter(r=>(r.Type==='personal'&&r.Owner===owner)||(r.Type==='team'&&r.AssignedTo===owner))}
+function plannerRules(owner){return S.rules.filter(r=>(r.Type==='personal'&&r.Owner===owner)||(r.Type==='team'&&isAssigned(r,owner)))}
 function teamRules(useFilter){
   const f=useFilter?S.teamFilter:'all';
-  return S.rules.filter(r=>{if(r.Type!=='team')return false;if(f==='all')return true;if(f==='open')return !r.AssignedTo||r.AssignedTo==='Anyone';return r.AssignedTo===f});
+  return S.rules.filter(r=>{if(r.Type!=='team')return false;if(f==='all')return true;if(f==='open')return isOpenToAnyone(r);return isAssigned(r,f)});
 }
 // Future copies of repeating items that haven't been created yet (so you can plan months ahead)
 function repeatPreviews(D,rules,list){
@@ -493,6 +511,7 @@ function render(){
 
   const q=document.getElementById('quickInput'); if(q&&quickVal) q.value=quickVal;
   if(keep){const el=document.getElementById(keep.id);if(el){el.value=keep.v;el.focus();try{el.setSelectionRange(keep.s,keep.e)}catch(e){}}}
+  renderNotices();
 }
 
 function setupNeeded(){
@@ -569,8 +588,8 @@ function itemHTML(e){
   if(cl.length) m.push(`<span>☑ ${cld}/${cl.length} steps</span>`);
   if(it.RecurID) m.push(`<span title="Repeating">⟳ Repeats</span>`);
   if(it.Type==='team'){
-    const a=it.AssignedTo&&it.AssignedTo!=='Anyone'?it.AssignedTo:null;
-    m.push(`<span class="who">For ${a?`<i style="--c:${esc(userColor(a))}"></i>${esc(first(a))}`:'Anyone'}</span>`);
+    const al=assignees(it.AssignedTo);
+    m.push(`<span class="who">For ${al.length?al.map(a=>`<i style="--c:${esc(userColor(a))}"></i>${esc(first(a))}`).join(', '):'Anyone'}</span>`);
     m.push(`<span>Set up by ${esc(first(it.CreatedBy))}</span>`);
     if(e.state==='done'&&it.CompletedBy) m.push(`<span class="who"><i style="--c:${esc(userColor(it.CompletedBy))}"></i>Done by ${esc(first(it.CompletedBy))}</span>`);
   }
@@ -584,15 +603,18 @@ function itemHTML(e){
 }
 
 function renderDay(){
-  const owner=S.viewAs||S.user.name;
-  const entries=applyTag(entriesFor(S.date,plannerList(owner),plannerRules(owner)));
+  const owner=S.viewAs||S.user.name, both=S.dayScope==='both';
+  const list=both?unionById(plannerList(owner),S.items.filter(it=>it.Type==='team')):plannerList(owner);
+  const rules=both?unionById(plannerRules(owner),teamRules(false)):plannerRules(owner);
+  const entries=applyTag(entriesFor(S.date,list,rules));
   const active=entries.filter(e=>e.state==='active').length, done=entries.filter(e=>e.state==='done').length;
   let viewas='';
   if(isAdmin()&&S.users.length>1){
     viewas=`<div class="viewas">Viewing <select class="field" id="viewAs">${S.users.map(u=>`<option ${u.name===owner?'selected':''} value="${esc(u.name)}">${u.name===S.user.name?'My planner':esc(u.name)+"'s planner"}</option>`).join('')}</select></div>`;
   }
-  return dateHead()+viewas+quickAdd(false)+tagChips(owner)+
-    `<div class="summary">${active} to do · ${done} done${owner!==S.user.name?` · ${esc(first(owner))}'s planner`:''}</div>`+
+  const scope=`<div class="scopebar"><div class="seg2" style="margin:0"><button class="${!both?'on':''}" data-act="dayscope" data-v="mine">${owner!==S.user.name?esc(first(owner))+"'s planner":'My planner'}</button><button class="${both?'on':''}" data-act="dayscope" data-v="both">Planner + all Team</button></div></div>`;
+  return dateHead()+viewas+scope+quickAdd(false)+tagChips(owner)+
+    `<div class="summary">${active} to do · ${done} done${owner!==S.user.name?` · ${esc(first(owner))}'s planner`:''}${both?' · including every team task':''}</div>`+
     listHTML(entries,S.date<today()?'Nothing was planned for this day.':'Nothing planned yet. Add your first item above.');
 }
 
@@ -609,12 +631,14 @@ function renderTeam(){
 function weekStartOf(d){return addDays(d,-dObj(d).getUTCDay())}
 function calSource(){
   if(S.weekMode==='team') return {list:S.items.filter(it=>it.Type==='team'),rules:teamRules(false),owner:''};
-  const o=S.viewAs||S.user.name; return {list:plannerList(o),rules:plannerRules(o),owner:o};
+  const o=S.viewAs||S.user.name;
+  if(S.weekMode==='both') return {list:unionById(plannerList(o),S.items.filter(it=>it.Type==='team')),rules:unionById(plannerRules(o),teamRules(false)),owner:o};
+  return {list:plannerList(o),rules:plannerRules(o),owner:o};
 }
 function navBtn(act,ch,label){return `<button class="navbtn" data-act="${act}" aria-label="${label}" style="width:40px;height:40px;border-radius:12px;background:var(--card);box-shadow:var(--shadow);font-size:20px;color:var(--muted);flex:none">${ch}</button>`}
 function calToggles(src){
   return `<div class="calbar"><div class="seg2"><button class="${S.calView==='week'?'on':''}" data-act="calview" data-v="week">Week</button><button class="${S.calView==='month'?'on':''}" data-act="calview" data-v="month">Month</button></div>
-    <div class="seg2"><button class="${S.weekMode==='mine'?'on':''}" data-act="wkmode" data-v="mine">${S.viewAs&&S.viewAs!==S.user.name?esc(first(S.viewAs))+"'s planner":'My planner'}</button><button class="${S.weekMode==='team'?'on':''}" data-act="wkmode" data-v="team">Team</button></div></div>
+    <div class="seg2"><button class="${S.weekMode==='mine'?'on':''}" data-act="wkmode" data-v="mine">${S.viewAs&&S.viewAs!==S.user.name?esc(first(S.viewAs))+"'s planner":'My planner'}</button><button class="${S.weekMode==='team'?'on':''}" data-act="wkmode" data-v="team">Team</button><button class="${S.weekMode==='both'?'on':''}" data-act="wkmode" data-v="both">Both</button></div></div>
     ${tagChips(src.owner)}`;
 }
 function renderWeek(){ return S.calView==='month'?renderMonth():renderWeekGrid(); }
@@ -627,7 +651,7 @@ function renderWeekGrid(){
     const en=applyTag(entriesFor(d,src.list,src.rules)).filter(e=>e.state!=='moved');
     const a=en.filter(e=>e.state==='active'||e.state==='preview').length, dn=en.filter(e=>e.state==='done').length;
     const shown=en.slice(0,7);
-    const rows=shown.map(e=>{const lg=e.it.Tag?logoFor(e.it.Tag,e.it.Owner):null;return `<div class="wrow ${e.state}"><i class="p${+e.it.Priority||2}"></i>${lg?`<img class="wlogo" src="${lg}" alt="">`:''}<span>${e.state==='preview'?'⟳ ':''}${e.it.Time?`<b>${fmtTime(e.it.Time)}</b> `:''}${esc(e.it.Title)}</span></div>`}).join('');
+    const rows=shown.map(e=>{const lg=e.it.Tag?logoFor(e.it.Tag,e.it.Owner):null;return `<div class="wrow ${e.state}"><i class="p${+e.it.Priority||2}"></i>${lg?`<img class="wlogo" src="${lg}" alt="">`:''}<span>${e.state==='preview'?'⟳ ':''}${S.weekMode==='both'&&e.it.Type==='team'?'👥 ':''}${e.it.Time?`<b>${fmtTime(e.it.Time)}</b> `:''}${esc(e.it.Title)}</span></div>`}).join('');
     days+=`<div class="wday ${d===T?'today':''}" data-act="goday" data-d="${d}">
       <h4>${DOW[i]} ${fmt(d,{day:'numeric'})}<small>${a?a+' open':''}${a&&dn?' · ':''}${dn?dn+' done':''}</small></h4>
       ${rows||'<div class="wnone">—</div>'}${en.length>7?`<div class="wmore">+${en.length-7} more</div>`:''}</div>`;
@@ -651,7 +675,7 @@ function renderMonth(){
     const en=applyTag(entriesFor(d,src.list,src.rules)).filter(e=>e.state!=='moved');
     const dots=en.slice(0,6).map(e=>`<i class="pd p${+e.it.Priority||2} ${e.state==='done'?'done':''} ${e.state==='preview'?'preview':''}"></i>`).join('')+(en.length>6?`<small>+${en.length-6}</small>`:'');
     const rows=en.slice(0,4).map(e=>{const lg=e.it.Tag?logoFor(e.it.Tag,e.it.Owner):null;
-      return `<div class="mrow ${e.state}"><i class="pd p${+e.it.Priority||2}"></i>${lg?`<img class="wlogo" src="${lg}" alt="">`:''}<span>${e.state==='preview'?'⟳ ':''}${e.it.Time?fmtTime(e.it.Time).replace(':00','')+' ':''}${esc(e.it.Title)}</span></div>`}).join('')+(en.length>4?`<div class="mmore">+${en.length-4} more</div>`:'');
+      return `<div class="mrow ${e.state}"><i class="pd p${+e.it.Priority||2}"></i>${lg?`<img class="wlogo" src="${lg}" alt="">`:''}<span>${e.state==='preview'?'⟳ ':''}${S.weekMode==='both'&&e.it.Type==='team'?'👥 ':''}${e.it.Time?fmtTime(e.it.Time).replace(':00','')+' ':''}${esc(e.it.Title)}</span></div>`}).join('')+(en.length>4?`<div class="mmore">+${en.length-4} more</div>`:'');
     cells+=`<div class="mcell ${out?'out':''} ${d===T?'today':''} ${d<T?'past':''}" data-act="goday" data-d="${d}" title="${fmt(d,{weekday:'long',month:'long',day:'numeric'})}">
       <span class="num">${+d.slice(8)}</span><div class="mdots">${dots}</div><div class="mrows">${rows}</div></div>`;
   }
@@ -691,7 +715,7 @@ function freqText(r){
 function renderMore(){
   const rules=S.rules.slice().sort((a,b)=>a.Title.localeCompare(b.Title));
   const rl=rules.length?rules.map(r=>`<button class="rule" data-act="openrule" data-id="${esc(r.ID)}"><span><b style="font-weight:500">${esc(r.Title)}</b>
-    <small>${esc(freqText(r))}${r.Time?' at '+fmtTime(r.Time):''} · ${r.Type==='team'?'Team'+(r.AssignedTo&&r.AssignedTo!=='Anyone'?' → '+esc(first(r.AssignedTo)):''):(r.Owner===S.user.name?'Mine':esc(first(r.Owner)))}</small></span><span style="color:var(--muted)">›</span></button>`).join(''):'<p>No repeating items yet.</p>';
+    <small>${esc(freqText(r))}${r.Time?' at '+fmtTime(r.Time):''} · ${r.Type==='team'?'Team'+(assignees(r.AssignedTo).length?' → '+esc(whoText(r.AssignedTo)):''):(r.Owner===S.user.name?'Mine':esc(first(r.Owner)))}</small></span><span style="color:var(--muted)">›</span></button>`).join(''):'<p>No repeating items yet.</p>';
   return `<div class="card" style="margin-top:10px;display:flex;align-items:center;gap:12px"><div class="avatar" style="--c:${esc(S.user.color)};width:46px;height:46px;font-size:16px">${esc(initials(S.user.name))}</div>
       <div><div style="font-weight:600;font-size:17px">${esc(S.user.name)}</div><div style="font-size:13px;color:var(--muted);text-transform:capitalize">${esc(S.user.role)}</div></div></div>
     <div class="card"><h3>Repeating items</h3><p>Things that come up on a schedule — payroll, weekly meetings, monthly bills. They appear on their days automatically.</p>
@@ -713,7 +737,7 @@ function renderMore(){
 function renderNav(){
   const T=today();
   const myOpen=dayEntries(T,plannerList(S.user.name)).filter(e=>e.state==='active').length;
-  const teamOpen=dayEntries(T,S.items.filter(it=>it.Type==='team'&&(it.AssignedTo===S.user.name||!it.AssignedTo||it.AssignedTo==='Anyone'))).filter(e=>e.state==='active').length;
+  const teamOpen=dayEntries(T,S.items.filter(it=>it.Type==='team'&&(isAssigned(it,S.user.name)||isOpenToAnyone(it)))).filter(e=>e.state==='active').length;
   const tabs=[['day','My Day',ICON.day,myOpen],['team','Team',ICON.team,teamOpen],['week','Calendar',ICON.week,0],['search','Search',ICON.search,0],['more','More',ICON.more,0]];
   return `<nav class="nav"><div class="in">${tabs.map(([k,l,ic,n])=>`<button class="${S.tab===k?'on':''}" data-act="tab" data-tab="${k}">${ic}${n?`<span class="badge">${n}</span>`:''}${l}</button>`).join('')}</div></nav>`;
 }
@@ -753,6 +777,30 @@ function logout(msg){
 }
 function loadUsers(){
   call('users').then(j=>{S.users=j.users;lsSet(LS.users,j.users);if(!S.user)render()}).catch(()=>{if(!S.user){S.loginErr='';render();toast('Can’t reach the planner server')}});
+}
+
+/* ---------- assignment notices ---------- */
+function myPendingNotices(){return S.user?S.notices.filter(n=>n.To===S.user.name&&n.Ack!=='Yes').sort((a,b)=>a.CreatedAt<b.CreatedAt?-1:1):[]}
+function renderNotices(){
+  const box=document.getElementById('notice'); if(!box) return;
+  const list=myPendingNotices();
+  if(!list.length||F){box.innerHTML='';return}
+  const cards=list.map(n=>`<div class="ncard">
+      <div class="nfrom"><span class="avatar" style="--c:${esc(userColor(n.From))};width:28px;height:28px;font-size:11px">${esc(initials(n.From))}</span>
+        <span><b>${esc(first(n.From))}</b> assigned you ${n.Kind==='appt'?'a meeting':n.Kind==='repeat'?'a repeating task':'a task'}</span></div>
+      <div class="ntitle">${esc(n.Title)}</div>
+      <div class="nmeta">${n.Date?(n.Kind==='repeat'?'Starts ':'')+fmt(n.Date,{weekday:'long',month:'short',day:'numeric'}):''} · sent ${fmtStamp(n.CreatedAt)}</div>
+      <div class="btnrow"><button class="btn accent" data-act="ack" data-id="${esc(n.ID)}">✓ Got it</button><button class="btn ghost" data-act="ack-open" data-id="${esc(n.ID)}">Got it — open task</button></div></div>`).join('');
+  box.innerHTML=`<div class="overlay ntc"><div class="sheet" role="alertdialog" aria-modal="true">
+    <div class="sheet-head"><h2>🔔 ${list.length===1?'New assignment':list.length+' new assignments'}</h2></div>
+    <p class="summary" style="margin:0 0 10px">Please acknowledge so ${list.length===1?'the sender knows':'the senders know'} you’ve seen ${list.length===1?'it':'them'}.</p>
+    ${cards}${list.length>1?'<div class="btnrow" style="justify-content:flex-end"><button class="btn" data-act="ack-all">✓ Got it — all</button></div>':''}</div></div>`;
+}
+function ackNotice(id){
+  const now=new Date().toISOString();
+  S.notices.forEach(n=>{if(n.To===S.user.name&&n.Ack!=='Yes'&&(id==='all'||n.ID===id)){n.Ack='Yes';n.AckAt=now}});
+  renderNotices(); render();
+  mutate('ackNotice',{id});
 }
 
 /* ---------- item actions ---------- */
@@ -818,7 +866,6 @@ function syncForm(){
   if(g('f_time')) F.Time=g('f_time').value;
   if(g('f_end')) F.EndTime=g('f_end').value;
   if(g('f_loc')) F.Location=g('f_loc').value;
-  if(g('f_assign')) F.AssignedTo=g('f_assign').value;
   if(g('f_freq')) F.Freq=g('f_freq').value;
   document.querySelectorAll('[data-cl-text]').forEach(el=>{const i=+el.dataset.clText;if(F.Checklist[i])F.Checklist[i].t=el.value});
 }
@@ -832,6 +879,12 @@ function renderModal(){
   let info='';
   if(!F.isNew&&team) info+=`<div class="info">Set up by <b>${esc(F.CreatedBy)}</b>${F.CreatedAt?' on '+fmtShort(F.CreatedAt.slice(0,10)):''}${F.Completed?` · Completed by <b>${esc(F.CompletedBy)}</b> on ${fmtShort(F.CompletedDate)}`:''}${ro?'<br>Only the person who set this up, a manager, or Clint can change it — but you can check it off and tick steps.':''}</div>`;
   else if(!F.isNew&&F.Completed&&F.mode==='item') info+=`<div class="info">Completed on <b>${fmtShort(F.CompletedDate)}</b>${F.Date<F.CompletedDate?' (originally planned for '+fmtShort(F.Date)+')':''}</div>`;
+  if(!F.isNew&&team){
+    const ns=S.notices.filter(n=>F.mode==='rule'?n.RuleID===F.ID:n.ItemID===F.ID);
+    const latest={};ns.forEach(n=>{if(!latest[n.To]||n.CreatedAt>latest[n.To].CreatedAt)latest[n.To]=n});
+    const rows=Object.values(latest).map(n=>n.Ack==='Yes'?`✅ <b>${esc(first(n.To))}</b> saw it ${fmtStamp(n.AckAt)}`:`⏳ <b>${esc(first(n.To))}</b> hasn’t acknowledged yet`);
+    if(rows.length) info+=`<div class="info">${rows.join('<br>')}</div>`;
+  }
   if(F.mode==='item'&&F.RecurID) info+=`<div class="info">This is one day of a repeating item. Changes here affect <b>this day only</b>. To change the whole series go to More → Repeating items.</div>`;
   if(!F.isNew&&F.mode==='item'&&F.Type==='personal'&&F.Owner&&F.Owner!==S.user.name) info+=`<div class="info">In <b>${esc(F.Owner)}</b>’s planner</div>`;
 
@@ -843,12 +896,18 @@ function renderModal(){
   if(ro){
     body=`<div class="lbl">Task</div><div class="ro" style="font-weight:600;font-size:18px">${esc(F.Title)}</div>
       ${F.Notes?`<div class="lbl">Notes</div><div class="ro">${esc(F.Notes)}</div>`:''}
-      <div class="lbl">Details</div><div class="ro">Importance ${F.Priority} – ${PRI_LABEL[F.Priority]}${F.Tag?' · '+esc(F.Tag):''}<br>${fmt(F.Date,{weekday:'long',month:'long',day:'numeric'})}${F.Time?' at '+fmtRange(F.Time,F.EndTime):''}${F.Location?'<br>📍 '+esc(F.Location):''}${team?'<br>For: '+esc(F.AssignedTo||'Anyone'):''}</div>
+      <div class="lbl">Details</div><div class="ro">Importance ${F.Priority} – ${PRI_LABEL[F.Priority]}${F.Tag?' · '+esc(F.Tag):''}<br>${fmt(F.Date,{weekday:'long',month:'long',day:'numeric'})}${F.Time?' at '+fmtRange(F.Time,F.EndTime):''}${F.Location?'<br>📍 '+esc(F.Location):''}${team?'<br>For: '+esc(whoText(F.AssignedTo)):''}</div>
       ${F.Checklist.length?`<div class="lbl">Steps</div>${cl}`:''}`;
   } else {
     const pri=[1,2,3].map(v=>`<button type="button" class="p${v} ${F.Priority===v?'on':''}" data-act="f-pri" data-v="${v}">${v} · ${PRI_LABEL[v]}</button>`).join('');
     const tags=TAGS.concat(['']).map(t=>`<button type="button" class="${F.Tag===t?'on':''}" data-act="f-tag" data-v="${t}">${t||'None'}</button>`).join('');
-    const assign=team?`<label class="lbl" for="f_assign">Assign to</label><select class="field" id="f_assign"><option value="Anyone">Anyone (whoever is working)</option>${S.users.map(u=>`<option ${F.AssignedTo===u.name?'selected':''} value="${esc(u.name)}">${esc(u.name)}</option>`).join('')}</select>`:'';
+    const sel=assignees(F.AssignedTo);
+    const assign=team?`<div class="lbl">Assign to <span style="text-transform:none;letter-spacing:0;font-weight:500">— tap everyone who should do it</span></div>
+      <div class="seg people"><button type="button" class="${!sel.length?'on':''}" data-act="f-assign" data-v="">👥 Anyone</button>${S.users.map(u=>`<button type="button" class="${sel.indexOf(u.name)>=0?'on':''}" data-act="f-assign" data-v="${esc(u.name)}"><i class="pdot" style="background:${esc(u.color)}"></i>${esc(first(u.name))}</button>`).join('')}</div>
+      ${(()=>{const already=F.isNew?[]:S.notices.filter(n=>F.mode==='rule'?n.RuleID===F.ID:n.ItemID===F.ID).map(n=>n.To);
+        const orig=F.isNew||F.origType!=='team'?[]:assignees((findItem(F.ID)||S.rules.find(r=>r.ID===F.ID)||{}).AssignedTo);
+        const fresh=sel.filter(n=>n!==S.user.name&&already.indexOf(n)<0&&orig.indexOf(n)<0);
+        return fresh.length?`<div class="info" style="margin-top:8px">🔔 ${esc(fresh.map(first).join(', '))} will get a notice they need to acknowledge when you save.</div>`:''})()}`:'';
     let rep='';
     if(F.isNew||F.mode==='rule'){
       const opts=(F.mode==='rule'?[]:[['none','Does not repeat']]).concat([['daily','Every day'],['weekdays','Every weekday (Mon–Fri)'],['weekly','Weekly on certain days'],['monthly','Monthly on the '+ordinal(dObj(F.Date).getUTCDate())]]);
@@ -888,7 +947,7 @@ function renderModal(){
   m.innerHTML=`<div class="overlay" data-act="overlay"><div class="sheet" role="dialog" aria-modal="true">
     <div class="sheet-head"><h2>${title}</h2><button class="x" data-act="close-modal" aria-label="Close">✕</button></div>${info}${body}${foot}</div></div>`;
 }
-function closeModal(){F=null;renderModal()}
+function closeModal(){F=null;renderModal();renderNotices()}
 
 function saveForm(){
   syncForm();
@@ -954,6 +1013,15 @@ document.addEventListener('click',ev=>{
     case 'new-appt': openEditor({team:el.dataset.team==='1',appt:true});break;
     case 'link': break; // let the map link open normally
     case 'f-kind': syncForm();F.Kind=el.dataset.v;renderModal();break;
+    case 'f-assign': {syncForm();const v=el.dataset.v;let a=assignees(F.AssignedTo);
+      if(!v) a=[]; else if(a.indexOf(v)>=0) a=a.filter(x=>x!==v); else a.push(v);
+      F.AssignedTo=a.length?a.join(', '):'Anyone';renderModal();break}
+    case 'ack': ackNotice(el.dataset.id);break;
+    case 'ack-all': ackNotice('all');break;
+    case 'ack-open': {const n=S.notices.find(x=>x.ID===el.dataset.id);if(n){ackNotice(n.ID);
+      if(n.ItemID){const it=findItem(n.ItemID);if(it){S.tab='team';S.teamFilter='all';S.date=it.Date<today()?today():it.Date;render();openEditor({item:it})}}
+      else if(n.RuleID){const r=S.rules.find(x=>x.ID===n.RuleID);if(r)openEditor({rule:r})}}break}
+    case 'dayscope': S.dayScope=el.dataset.v;try{localStorage.setItem('vp_dayscope',S.dayScope)}catch(e){} render();break;
     case 'f-where': syncForm();
       if(el.dataset.v==='team'){F.Type='team';if(!F.AssignedTo||F.AssignedTo==='')F.AssignedTo='Anyone'}
       else{F.Type='personal';if(!F.Owner)F.Owner=S.viewAs||S.user.name}
@@ -962,7 +1030,9 @@ document.addEventListener('click',ev=>{
     case 'openrule': {const r=S.rules.find(x=>x.ID===el.dataset.id);if(r)openEditor({rule:r});break}
     case 'openres': {const it=findItem(el.dataset.id);if(it){S.date=it.Completed==='Yes'?it.CompletedDate:(it.Date<today()?today():it.Date);S.tab=it.Type==='team'?'team':'day';
       if(it.Type==='personal'&&isAdmin()) S.viewAs=it.Owner; S.tagFilter='all'; if(it.Type==='team') S.teamFilter='all'; render();openEditor({item:it})}break}
-    case 'goday': S.date=el.dataset.d;S.tab=S.weekMode==='team'?'team':'day';render();window.scrollTo(0,0);break;
+    case 'goday': S.date=el.dataset.d;S.tab=S.weekMode==='team'?'team':'day';
+      if(S.weekMode==='both'){S.dayScope='both'}else if(S.weekMode==='mine'){S.dayScope='mine'}
+      render();window.scrollTo(0,0);break;
     case 'calview': S.calView=el.dataset.v;try{localStorage.setItem('vp_calview',S.calView)}catch(e){} render();break;
     case 'mo-prev': S.monthStart=shiftMonth(S.monthStart,-1);render();break;
     case 'mo-next': S.monthStart=shiftMonth(S.monthStart,1);render();break;
