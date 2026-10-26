@@ -461,11 +461,16 @@ function teamList(){
     return isAssigned(it,f);
   });
 }
+const WEEK_LABEL={1:'1st',2:'2nd',3:'3rd',4:'4th',5:'Last'};
+function nthOf(d){return Math.ceil(dObj(d).getUTCDate()/7)}
+function parseNth(v){const p=String(v||'').split('|');return {weeks:(p[0]||'').split(',').filter(String).map(Number),days:(p[1]||'').split(',').filter(String).map(Number)}}
 function ruleMatches(r,d){
   const dt=dObj(d), dow=dt.getUTCDay();
   if(r.Freq==='daily') return true;
   if(r.Freq==='weekdays') return dow>=1&&dow<=5;
   if(r.Freq==='weekly') return String(r.Days||'').split(',').filter(String).map(Number).indexOf(dow)>=0;
+  if(r.Freq==='monthlyNth'){const n=parseNth(r.Days);if(n.days.indexOf(dow)<0)return false;const dom=dt.getUTCDate();const last=new Date(Date.UTC(dt.getUTCFullYear(),dt.getUTCMonth()+1,0)).getUTCDate();
+    return n.weeks.indexOf(Math.ceil(dom/7))>=0||(n.weeks.indexOf(5)>=0&&dom+7>last)}
   if(r.Freq==='monthly'){const want=+r.Days||1;const last=new Date(Date.UTC(dt.getUTCFullYear(),dt.getUTCMonth()+1,0)).getUTCDate();return dt.getUTCDate()===Math.min(want,last)}
   return false;
 }
@@ -711,6 +716,9 @@ function freqText(r){
   if(r.Freq==='weekdays') return 'Every weekday (Mon–Fri)';
   if(r.Freq==='weekly') return 'Every '+String(r.Days||'').split(',').filter(String).map(n=>DOW[+n]).join(', ');
   if(r.Freq==='monthly') return 'Monthly on the '+ordinal(+r.Days||1);
+  if(r.Freq==='monthlyNth'){const n=parseNth(r.Days);const w=n.weeks.slice().sort().map(x=>WEEK_LABEL[x]);
+    const wt=w.length>1?w.slice(0,-1).join(', ')+' & '+w[w.length-1]:w[0]||'';
+    return 'The '+wt+' '+n.days.slice().sort().map(x=>['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][x]).join(' & ')+' of every month'}
   return '';
 }
 
@@ -849,12 +857,13 @@ function openEditor(opts){
     const r=opts.rule;
     F={mode:'rule',isNew:false,ID:r.ID,Type:r.Type,Owner:r.Owner,Title:r.Title,Notes:r.Notes||'',Priority:+r.Priority||2,Tag:r.Tag||'',
       Date:r.StartDate,Time:r.Time||'',Kind:r.Kind||'',EndTime:r.EndTime||'',Location:r.Location||'',AssignedTo:r.AssignedTo||'Anyone',Checklist:parseCL(r.Checklist),Freq:r.Freq,
-      Days:r.Freq==='weekly'?String(r.Days||'').split(',').filter(String).map(Number):[],CreatedBy:r.CreatedBy,readOnly:!canEdit(r),limited:!canFullyEdit(r)};
+      Days:r.Freq==='weekly'?String(r.Days||'').split(',').filter(String).map(Number):(r.Freq==='monthlyNth'?parseNth(r.Days).days:[]),
+      Weeks:r.Freq==='monthlyNth'?parseNth(r.Days).weeks:[nthOf(r.StartDate||today())],CreatedBy:r.CreatedBy,readOnly:!canEdit(r),limited:!canFullyEdit(r)};
   } else {
     const team=!!opts.team; const d=S.date<T?T:S.date;
     F={mode:opts.ruleMode?'rule':'item',isNew:true,ID:null,Type:team?'team':'personal',Owner:team?'':(S.viewAs||S.user.name),Title:'',Notes:'',
       Priority:S.quickPri,Tag:S.tagFilter!=='all'?S.tagFilter:'',Date:d,Time:'',Kind:opts.appt?'appt':'',EndTime:'',Location:'',AssignedTo:team?(S.teamFilter!=='all'&&S.teamFilter!=='open'?S.teamFilter:'Anyone'):'',
-      Checklist:[],Freq:opts.ruleMode?'weekly':'none',Days:[dObj(d).getUTCDay()],readOnly:false};
+      Checklist:[],Freq:opts.ruleMode?'weekly':'none',Days:[dObj(d).getUTCDay()],Weeks:[Math.min(nthOf(d),4)],readOnly:false};
   }
   renderModal();
   if(F.isNew) setTimeout(()=>{const t=document.getElementById('f_title');if(t)t.focus()},60);
@@ -912,9 +921,15 @@ function renderModal(){
         return fresh.length?`<div class="info" style="margin-top:8px">🔔 ${esc(fresh.map(first).join(', '))} will get a notice they need to acknowledge when you save.</div>`:''})()}`:'';
     let rep='';
     if(F.isNew||F.mode==='rule'){
-      const opts=(F.mode==='rule'?[]:[['none','Does not repeat']]).concat([['daily','Every day'],['weekdays','Every weekday (Mon–Fri)'],['weekly','Weekly on certain days'],['monthly','Monthly on the '+ordinal(dObj(F.Date).getUTCDate())]]);
+      const opts=(F.mode==='rule'?[]:[['none','Does not repeat']]).concat([['daily','Every day'],['weekdays','Every weekday (Mon–Fri)'],['weekly','Weekly on certain days'],['monthly','Monthly on the '+ordinal(dObj(F.Date).getUTCDate())],['monthlyNth','Monthly on certain weeks (e.g. 2nd & 4th Monday)']]);
       rep=`<label class="lbl" for="f_freq">Repeat</label><select class="field" id="f_freq" data-act="f-freq">${opts.map(([v,l])=>`<option value="${v}" ${F.Freq===v?'selected':''}>${l}</option>`).join('')}</select>`;
       if(F.Freq==='weekly') rep+=`<div class="seg days" style="margin-top:8px">${DOW.map((d,i)=>`<button type="button" class="${F.Days.indexOf(i)>=0?'on':''}" data-act="f-day" data-v="${i}">${d.slice(0,2)}</button>`).join('')}</div>`;
+      if(F.Freq==='monthlyNth'){
+        const W=F.Weeks||[];
+        rep+=`<div class="lbl" style="margin-top:12px">Which week(s) of the month</div><div class="seg days">${[1,2,3,4,5].map(n=>`<button type="button" class="${W.indexOf(n)>=0?'on':''}" data-act="f-week" data-v="${n}">${WEEK_LABEL[n]}</button>`).join('')}</div>
+          <div class="lbl">On which day</div><div class="seg days">${DOW.map((d,i)=>`<button type="button" class="${F.Days.indexOf(i)>=0?'on':''}" data-act="f-day" data-v="${i}">${d.slice(0,2)}</button>`).join('')}</div>
+          ${W.length&&F.Days.length?`<div class="info">Repeats: <b>${esc(freqText({Freq:'monthlyNth',Days:W.join(',')+'|'+F.Days.join(',')}))}</b>${(()=>{const nx=[];let d=F.Date;for(let i=0;i<400&&nx.length<3;i++,d=addDays(d,1)){if(ruleMatches({Freq:'monthlyNth',Days:W.join(',')+'|'+F.Days.join(',')},d))nx.push(fmt(d,{weekday:'short',month:'short',day:'numeric'}))}return nx.length?'<br>Next: '+nx.join(' · '):''})()}</div>`:''}`;
+      }
     }
     const isA=F.Kind==='appt';
     const kindSeg=`<div class="seg" style="margin-top:10px"><button type="button" class="${!isA?'on':''}" data-act="f-kind" data-v="">✓ To-do</button><button type="button" class="${isA?'on':''}" data-act="f-kind" data-v="appt">🕘 Meeting / appointment</button></div>`;
@@ -963,8 +978,9 @@ function saveForm(){
   const isRule=F.mode==='rule'||F.Freq!=='none';
   if(isRule){
     if(F.Freq==='weekly'&&!F.Days.length){toast('Pick at least one day of the week');return}
+    if(F.Freq==='monthlyNth'&&(!(F.Weeks||[]).length||!F.Days.length)){toast('Pick which week(s) and which day');return}
     const r={ID:F.mode==='rule'&&F.ID?F.ID:uid('r'),Type:F.Type,Owner:F.Owner,Title:F.Title.trim(),Notes:F.Notes,Priority:String(F.Priority),Tag:F.Tag,
-      Time:F.Time,AssignedTo:F.Type==='team'?F.AssignedTo:'',Freq:F.Freq,Days:F.Freq==='weekly'?F.Days.slice().sort().join(','):(F.Freq==='monthly'?String(dObj(F.Date).getUTCDate()):''),
+      Time:F.Time,AssignedTo:F.Type==='team'?F.AssignedTo:'',Freq:F.Freq,Days:F.Freq==='weekly'?F.Days.slice().sort().join(','):(F.Freq==='monthly'?String(dObj(F.Date).getUTCDate()):(F.Freq==='monthlyNth'?F.Weeks.slice().sort().join(',')+'|'+F.Days.slice().sort().join(','):'')),
       StartDate:F.Date,Checklist:clStr,CreatedBy:F.CreatedBy||S.user.name,Active:'Yes',...kindFields};
     const wasNew=!(F.mode==='rule'&&!F.isNew);
     const i=S.rules.findIndex(x=>x.ID===r.ID); if(i>=0) S.rules[i]=Object.assign(S.rules[i],r); else S.rules.push(r);
@@ -1058,6 +1074,7 @@ document.addEventListener('click',ev=>{
     case 'close-modal': closeModal();break;
     case 'f-pri': syncForm();F.Priority=+el.dataset.v;renderModal();break;
     case 'f-tag': syncForm();F.Tag=el.dataset.v;renderModal();break;
+    case 'f-week': {syncForm();const v=+el.dataset.v;F.Weeks=F.Weeks||[];const i=F.Weeks.indexOf(v);if(i>=0)F.Weeks.splice(i,1);else F.Weeks.push(v);renderModal();break}
     case 'f-day': {syncForm();const v=+el.dataset.v;const i=F.Days.indexOf(v);if(i>=0)F.Days.splice(i,1);else F.Days.push(v);renderModal();break}
     case 'cl-add': {syncForm();const ns=document.getElementById('f_newstep');if(ns.value.trim()){F.Checklist.push({t:ns.value.trim(),d:false});renderModal();document.getElementById('f_newstep').focus()}break}
     case 'cl-rm': syncForm();F.Checklist.splice(+el.dataset.i,1);renderModal();break;
@@ -1076,7 +1093,11 @@ document.addEventListener('change',ev=>{
   const t=ev.target;
   if(t.id==='datePick'&&t.value){S.date=t.value;render()}
   else if(t.id==='viewAs'){S.viewAs=t.value===S.user.name?null:t.value;render()}
-  else if(t.id==='f_freq'){syncForm();if(F.Freq==='weekly'&&!F.Days.length)F.Days=[dObj(F.Date).getUTCDay()];renderModal()}
+  else if(t.id==='f_freq'){syncForm();
+    // start from the date currently on the form
+    if(F.Freq==='weekly'||F.Freq==='monthlyNth') F.Days=[dObj(F.Date).getUTCDay()];
+    if(F.Freq==='monthlyNth') F.Weeks=[Math.min(nthOf(F.Date),4)];
+    renderModal()}
   else if(t.id==='f_date'&&F&&(F.isNew||F.mode==='rule')){syncForm();renderModal()}
   else if(t.id==='quickAssign'){S.quickAssign=t.value}
 });
