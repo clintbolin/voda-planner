@@ -175,6 +175,10 @@ button{cursor:pointer;background:none;border:0;padding:0}
 .item.past .title{color:var(--muted)}
 .loc{color:var(--ink);text-decoration:none;border-bottom:1px dotted var(--muted)}
 .morelinks{display:flex;gap:18px;flex-wrap:wrap}
+.overlay.noanim,.overlay.noanim .sheet{animation:none}
+textarea.field.clt{min-height:0;resize:none;overflow:hidden;line-height:1.35;padding:7px 9px;display:block}
+.cl{align-items:flex-start}.cl input[type=checkbox]{margin-top:8px}.cl .rm{margin-top:6px}
+.cl .t{word-break:break-word}
 .overlay.ntc{z-index:70}
 .ncard{background:var(--paper);border-radius:14px;padding:14px;margin-bottom:10px;border-left:4px solid var(--accent)}
 .nfrom{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted)}
@@ -900,7 +904,7 @@ function renderModal(){
   if(!F.isNew&&F.mode==='item'&&F.Type==='personal'&&F.Owner&&F.Owner!==S.user.name) info+=`<div class="info">In <b>${esc(F.Owner)}</b>’s planner</div>`;
 
   const cl=F.Checklist.map((x,i)=>`<div class="cl"><input type="checkbox" data-act="cl-toggle" data-i="${i}" ${x.d?'checked':''}>
-    ${ro?`<span class="t ${x.d?'d':''}">${esc(x.t)}</span>`:`<input class="field t" style="padding:7px 9px" data-cl-text="${i}" value="${esc(x.t)}">`}
+    ${ro?`<span class="t ${x.d?'d':''}">${esc(x.t)}</span>`:`<textarea class="field t clt" rows="1" data-cl-text="${i}">${esc(x.t)}</textarea>`}
     ${ro?'':`<button class="rm" data-act="cl-rm" data-i="${i}" aria-label="Remove step">✕</button>`}</div>`).join('');
 
   let body;
@@ -950,7 +954,7 @@ function renderModal(){
       ${timeBlock}
       ${assign}${rep}
       <div class="lbl">${isA?'Agenda / steps':'Steps (checklist)'}</div>${cl}
-      <div class="cladd"><input class="field" id="f_newstep" placeholder="Add a step…" autocomplete="off"><button type="button" class="btn ghost" data-act="cl-add">Add</button></div>`;
+      <div class="cladd"><textarea class="field clt" rows="1" id="f_newstep" placeholder="Add a step…" autocomplete="off"></textarea><button type="button" class="btn ghost" data-act="cl-add">Add</button></div>`;
   }
   const delOK=!F.isNew&&(F.mode==='rule'?canDelete({Type:F.Type,Owner:F.Owner,CreatedBy:F.CreatedBy}):canDelete({Type:F.Type,Owner:F.Owner,CreatedBy:F.CreatedBy}));
   let foot;
@@ -961,9 +965,15 @@ function renderModal(){
     foot=`<div class="foot">${delOK?'<button class="btn danger" data-act="f-delete">Delete</button>':''}<span class="sp"></span>
       <button class="btn ghost" data-act="close-modal">Cancel</button><button class="btn" data-act="f-save">Save</button></div>`;
   }
-  m.innerHTML=`<div class="overlay" data-act="overlay"><div class="sheet" role="dialog" aria-modal="true">
+  // Redrawing the same window (ticking a step, tapping importance, etc.)? Keep the scroll position and skip the slide-in animation.
+  const oldSheet=m.querySelector('.sheet'), same=!!oldSheet&&renderModal._f===F, keepTop=same?oldSheet.scrollTop:0;
+  m.innerHTML=`<div class="overlay ${same?'noanim':''}" data-act="overlay"><div class="sheet" role="dialog" aria-modal="true">
     <div class="sheet-head"><h2>${title}</h2><button class="x" data-act="close-modal" aria-label="Close">✕</button></div>${info}${body}${foot}</div></div>`;
+  m.querySelectorAll('textarea.clt').forEach(fitBox);
+  if(same){const ns=m.querySelector('.sheet');if(ns)ns.scrollTop=keepTop}
+  renderModal._f=F;
 }
+function fitBox(el){el.style.height='auto';el.style.height=(el.scrollHeight+2)+'px'}
 function closeModal(){F=null;renderModal();renderNotices()}
 
 function saveForm(){
@@ -1102,11 +1112,13 @@ document.addEventListener('change',ev=>{
   else if(t.id==='quickAssign'){S.quickAssign=t.value}
 });
 document.addEventListener('input',ev=>{
+  if(ev.target.classList&&ev.target.classList.contains('clt')) fitBox(ev.target);
   if(ev.target.id==='searchInput'){S.search=ev.target.value;clearTimeout(render._s);render._s=setTimeout(render,150)}
 });
 document.addEventListener('keydown',ev=>{
   if(ev.key==='Escape'&&F) closeModal();
   if(ev.key==='Enter'&&ev.target.id==='f_newstep'){ev.preventDefault();document.querySelector('[data-act="cl-add"]').click()}
+  else if(ev.key==='Enter'&&ev.target.classList&&ev.target.classList.contains('clt')){ev.preventDefault();ev.target.blur()}
   if(!S.user&&S.loginName&&/^[0-9]$/.test(ev.key)) pressKey(ev.key);
   if(!S.user&&S.loginName&&ev.key==='Backspace') pressKey('⌫');
 });
