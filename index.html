@@ -180,6 +180,8 @@ textarea.field.clt{min-height:0;resize:none;overflow:hidden;line-height:1.35;pad
 .cl{align-items:flex-start}.cl input[type=checkbox]{margin-top:8px}.cl .rm{margin-top:6px}
 .cl .t{word-break:break-word}
 .overlay.ntc{z-index:70}
+.topicbox{display:flex;gap:8px;align-items:center;background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:8px 8px 8px 12px;margin:6px 0}
+.topicbox code{flex:1;font-size:13px;word-break:break-all}
 .ncard{background:var(--paper);border-radius:14px;padding:14px;margin-bottom:10px;border-left:4px solid var(--accent)}
 .nfrom{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted)}
 .nfrom b{color:var(--ink)}
@@ -289,6 +291,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbwLh3KpbEaVbnx85ptYlONf
 /* ------------------------------------------------------------- */
 const PRI_LABEL = {1:'Must do', 2:'Should do', 3:'Could do'};
 const TAGS = ['Voda','Station','Personal'];
+const REMIND_OPTS=[['at','At the time'],['15m','15 min before'],['30m','30 min before'],['1h','1 hour before'],['2h','2 hours before'],['1d','Day before'],['2d','2 days before'],['1w','1 week before']];
 // The Personal logo only appears on this person's own planner
 const PERSONAL_LOGO_OWNER = 'Clint Bolin';
 const LOGOS = {Voda:'logo-voda.png', Station:'logo-station.png', Personal:'logo-personal.png'};
@@ -398,7 +401,7 @@ function applyData(d){
 }
 function refresh(silent){
   if(!S.creds) return Promise.resolve();
-  return api('getData').then(j=>{S.user=j.user;if(pending===0)applyData(j.data)}).catch(e=>{
+  return api('getData').then(j=>{S.user=j.user;if(j.push)S.push=j.push;if(pending===0)applyData(j.data)}).catch(e=>{
     if(e.message==='AUTH'){logout('Please sign in again.');return}
     setSync(true); if(!silent) toast('Could not reach the planner server');
   });
@@ -598,6 +601,7 @@ function itemHTML(e){
   if(e.state==='preview') m.push(`<span>Scheduled repeat · tap to edit the series</span>`);
   if(cl.length) m.push(`<span>☑ ${cld}/${cl.length} steps</span>`);
   if(it.RecurID) m.push(`<span title="Repeating">⟳ Repeats</span>`);
+  if(it.Remind&&e.state!=='done') m.push(`<span title="${esc(String(it.Remind).split(',').map(c=>(REMIND_OPTS.find(o=>o[0]===c)||['',c])[1]).join(', '))}">🔔 ${String(it.Remind).split(',').filter(Boolean).length}</span>`);
   if(it.Type==='team'){
     const al=assignees(it.AssignedTo);
     m.push(`<span class="who">For ${al.length?al.map(a=>`<i style="--c:${esc(userColor(a))}"></i>${esc(first(a))}`).join(', '):'Anyone'}</span>`);
@@ -735,6 +739,14 @@ function renderMore(){
     <div class="card"><h3>Repeating items</h3><p>Things that come up on a schedule — payroll, weekly meetings, monthly bills. They appear on their days automatically.</p>
       <div style="margin-top:8px">${rl}</div>
       <div class="btnrow"><button class="btn ghost" data-act="newrule" data-team="0">+ Repeating for me</button><button class="btn ghost" data-act="newrule" data-team="1">+ Repeating team task</button></div></div>
+    <div class="card"><h3>🔔 Phone notifications</h3>
+      <p>Get reminders on your phone — even when the planner is closed — through the free <b>ntfy</b> app. One-time setup:</p>
+      <p><b>1.</b> Install <b>ntfy</b> from the App Store (iPhone) or Google Play (Android).</p>
+      <p><b>2.</b> Open it, tap <b>+</b> (Subscribe to topic) and paste your private channel name below. Leave the server as ntfy.sh. Allow notifications when asked.</p>
+      ${S.push&&S.push.topic?`<div class="topicbox"><code>${esc(S.push.topic)}</code><button class="btn ghost" data-act="copy-topic">Copy</button></div>`:'<p><i>Your channel name will appear here once Clint turns reminders on.</i></p>'}
+      <p><b>3.</b> Tap below to make sure it works.</p>
+      <div class="btnrow"><button class="btn accent" data-act="test-push">Send test notification</button></div>
+      <p style="font-size:12px">Keep your channel name private — anyone who has it could see your reminders.</p></div>
     <div class="card"><h3>Appearance</h3><p>Auto follows your phone or computer’s own light/dark setting.</p>
       <div class="seg" style="margin-top:10px">${[['auto','Auto'],['light','Light'],['dark','Dark']].map(([v,l])=>`<button type="button" class="${getTheme()===v?'on':''}" data-act="theme-set" data-v="${v}">${l}</button>`).join('')}</div></div>
     <div class="card"><h3>Change my PIN</h3>
@@ -777,7 +789,7 @@ function pressKey(k){
 function doLogin(){
   S.creds={name:S.loginName,pin:S.pin};
   call('login').then(j=>{
-    S.user=j.user;lsSet(LS.creds,S.creds);S.pin='';S.viewAs=null;S.tab='day';S.date=today();
+    S.user=j.user;if(j.push)S.push=j.push;lsSet(LS.creds,S.creds);S.pin='';S.viewAs=null;S.tab='day';S.date=today();
     applyData(j.data);
   }).catch(e=>{
     S.creds=null;S.pin='';
@@ -854,19 +866,19 @@ function openEditor(opts){
   if(opts.item){
     const it=opts.item;
     F={mode:'item',isNew:false,ID:it.ID,Type:it.Type,origType:it.Type,Owner:it.Owner,Title:it.Title,Notes:it.Notes||'',Priority:+it.Priority||2,Tag:it.Tag||'',
-      Date:it.Date,Time:it.Time||'',Kind:it.Kind||'',EndTime:it.EndTime||'',Location:it.Location||'',AssignedTo:it.AssignedTo||'Anyone',Checklist:parseCL(it.Checklist).map(x=>({t:x.t,d:!!x.d})),
+      Date:it.Date,Time:it.Time||'',Kind:it.Kind||'',EndTime:it.EndTime||'',Location:it.Location||'',Remind:String(it.Remind||'').split(',').filter(Boolean),AssignedTo:it.AssignedTo||'Anyone',Checklist:parseCL(it.Checklist).map(x=>({t:x.t,d:!!x.d})),
       Freq:'none',Days:[],RecurID:it.RecurID,CreatedBy:it.CreatedBy,CreatedAt:it.CreatedAt,Completed:it.Completed==='Yes',CompletedBy:it.CompletedBy,CompletedDate:it.CompletedDate,
       readOnly:!canEdit(it),limited:!canFullyEdit(it),UpdatedBy:it.UpdatedBy||'',UpdatedAt:it.UpdatedAt||''};
   } else if(opts.rule){
     const r=opts.rule;
     F={mode:'rule',isNew:false,ID:r.ID,Type:r.Type,Owner:r.Owner,Title:r.Title,Notes:r.Notes||'',Priority:+r.Priority||2,Tag:r.Tag||'',
-      Date:r.StartDate,Time:r.Time||'',Kind:r.Kind||'',EndTime:r.EndTime||'',Location:r.Location||'',AssignedTo:r.AssignedTo||'Anyone',Checklist:parseCL(r.Checklist),Freq:r.Freq,
+      Date:r.StartDate,Time:r.Time||'',Kind:r.Kind||'',EndTime:r.EndTime||'',Location:r.Location||'',Remind:String(r.Remind||'').split(',').filter(Boolean),AssignedTo:r.AssignedTo||'Anyone',Checklist:parseCL(r.Checklist),Freq:r.Freq,
       Days:r.Freq==='weekly'?String(r.Days||'').split(',').filter(String).map(Number):(r.Freq==='monthlyNth'?parseNth(r.Days).days:[]),
       Weeks:r.Freq==='monthlyNth'?parseNth(r.Days).weeks:[nthOf(r.StartDate||today())],CreatedBy:r.CreatedBy,readOnly:!canEdit(r),limited:!canFullyEdit(r)};
   } else {
     const team=!!opts.team; const d=S.date<T?T:S.date;
     F={mode:opts.ruleMode?'rule':'item',isNew:true,ID:null,Type:team?'team':'personal',Owner:team?'':(S.viewAs||S.user.name),Title:'',Notes:'',
-      Priority:S.quickPri,Tag:S.tagFilter!=='all'?S.tagFilter:'',Date:d,Time:'',Kind:opts.appt?'appt':'',EndTime:'',Location:'',AssignedTo:team?(S.teamFilter!=='all'&&S.teamFilter!=='open'?S.teamFilter:'Anyone'):'',
+      Priority:S.quickPri,Tag:S.tagFilter!=='all'?S.tagFilter:'',Date:d,Time:'',Kind:opts.appt?'appt':'',EndTime:'',Location:'',Remind:opts.appt?['1h']:[],AssignedTo:team?(S.teamFilter!=='all'&&S.teamFilter!=='open'?S.teamFilter:'Anyone'):'',
       Checklist:[],Freq:opts.ruleMode?'weekly':'none',Days:[dObj(d).getUTCDay()],Weeks:[Math.min(nthOf(d),4)],readOnly:false};
   }
   renderModal();
@@ -953,6 +965,9 @@ function renderModal(){
       <div class="lbl">Category</div><div class="seg">${tags}</div>
       ${timeBlock}
       ${assign}${rep}
+      <div class="lbl">🔔 Remind me on my phone <span style="text-transform:none;letter-spacing:0;font-weight:500">— pick up to 3</span></div>
+      <div class="seg people">${REMIND_OPTS.map(([v,l])=>`<button type="button" class="${(F.Remind||[]).indexOf(v)>=0?'on':''}" data-act="f-remind" data-v="${v}">${l}</button>`).join('')}</div>
+      ${(()=>{if(!(F.Remind||[]).length)return '';const t=(!F.Time?'No time is set, so reminders count from <b>8:00 AM</b> that day. ':'')+(team?'Reminders go to everyone this is assigned to. ':'')+(S.push&&S.push.topic?'':'Set up notifications under <b>More → Phone notifications</b> to receive them.');return t?`<div class="info" style="margin-top:8px">${t}</div>`:''})()}
       <div class="lbl">${isA?'Agenda / steps':'Steps (checklist)'}</div>${cl}
       <div class="cladd"><textarea class="field clt" rows="1" id="f_newstep" placeholder="Add a step…" autocomplete="off"></textarea><button type="button" class="btn ghost" data-act="cl-add">Add</button></div>`;
   }
@@ -984,7 +999,7 @@ function saveForm(){
   const clStr=checklist.length?JSON.stringify(checklist):'';
   if(F.Kind==='appt'&&!F.Time){toast('Please pick a start time for the meeting');return}
   if(F.Kind==='appt'&&F.EndTime&&F.EndTime<=F.Time){toast('End time needs to be after the start time');return}
-  const kindFields={Kind:F.Kind==='appt'?'appt':'',EndTime:F.Kind==='appt'?F.EndTime:'',Location:F.Kind==='appt'?F.Location.trim():''};
+  const kindFields={Kind:F.Kind==='appt'?'appt':'',EndTime:F.Kind==='appt'?F.EndTime:'',Location:F.Kind==='appt'?F.Location.trim():'',Remind:(F.Remind||[]).join(',')};
   const isRule=F.mode==='rule'||F.Freq!=='none';
   if(isRule){
     if(F.Freq==='weekly'&&!F.Days.length){toast('Pick at least one day of the week');return}
@@ -1073,6 +1088,11 @@ document.addEventListener('click',ev=>{
     case 'theme-set': setTheme(el.dataset.v);break;
     case 'refresh': refresh().then(()=>toast('Up to date'));break;
     case 'logout': if(confirm('Sign out of the planner on this device?')) logout();break;
+    case 'f-remind': {syncForm();const v=el.dataset.v;F.Remind=F.Remind||[];const i=F.Remind.indexOf(v);
+      if(i>=0)F.Remind.splice(i,1);else if(F.Remind.length>=3){toast('Up to 3 reminders — tap one to turn it off first');break}else F.Remind.push(v);
+      F.Remind.sort((a,b)=>REMIND_OPTS.findIndex(o=>o[0]===a)-REMIND_OPTS.findIndex(o=>o[0]===b));renderModal();break}
+    case 'copy-topic': {const t=(S.push&&S.push.topic)||'';try{navigator.clipboard.writeText(t).then(()=>toast('Copied: '+t),()=>toast(t))}catch(e){toast(t)}break}
+    case 'test-push': api('testPush').then(()=>toast('Test sent — check your phone')).catch(e=>toast(e.message));break;
     case 'savepin': {
       const a=document.getElementById('pin1').value, b=document.getElementById('pin2').value;
       if(!/^\d{4}$/.test(a)){toast('PIN must be 4 numbers');break}
